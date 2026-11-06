@@ -188,6 +188,50 @@ dsh plugin install link:/path/to/dsh-memory-bank
 
 ---
 
+## 漂移：**目标消失 ≠ 切片变了**
+
+`memory_audit` 复查每条记忆引用的锚点，判决分**五种**：
+
+| 判决 | 含义 | 该做什么 |
+|---|---|---|
+| `healthy` | 目标还在，切片没变 | 不用管 |
+| **`quarantined`** | **目标消失了**（文件删了 / 符号不存在 / 行号越界） | 退休，或补新锚点后重写 |
+| `advisory` | 目标还在，**切片变了** | **不用管** —— 重构不是攻击 |
+| `symbol-not-a-definition` | 锚点落在注释 / 字符串 / 调用处 | 指错了，**不重新签名** |
+| `unverifiable` | 机器无法判断（`commit` / `command` / `user`） | 不撒谎 |
+
+前两种混为一谈的后果是具体的：**每一次改名、挪行、重新格式化都会把整个记忆库
+标成「不可信」，然后所有人学会忽略这个警告。** 那比不做漂移检测更糟。
+
+第四种同样重要：一个只出现在注释里的名字，看起来「还在」，但它已经不再指向任何东西 ——
+把它当成 `healthy` 是把错的锚点固化下来。
+
+第五种是诚实：`git commit abc123` 还在不在，机器人不知道。报「健康」是撒谎，报「漂移」是误伤。
+
+### 内容寻址：写入 / 解析 / 哈希的**同一套**规范形式
+
+```
+canonicalBody(body) = body.replace(/\r\n/g, '\n').trimEnd()
+```
+
+三处必须共用：
+
+| 位置 | 为什么 |
+|---|---|
+| `serializeEntry` | 文件里写的就是规范形式 |
+| `parseEntry` | 读回来必须逐字节相同（**只剥 serialize 加的那一个换行**） |
+| `contentHash` | 否则「写进去的」和「读回来的」算出不同的哈希 |
+
+这一条曾经不成立：`serializeEntry` 调 `trimEnd()` 并加 `\n`，`parseEntry` 不剥、
+`contentHash` 又直接哈希原始 body —— 于是
+
+> **每一条正常写入的记忆都被判成 `tampered`，回执层从未生效，
+> 而且它用「正文被改」这个措辞做了一次虚假的篡改指控。**
+
+`test/drift.test.mjs` 里有一条专门钉这个往返。
+
+---
+
 ## dream：只提议结构，不写记忆
 
 | pass | 算法 | 提议 | **刻意不提议** |
@@ -356,6 +400,7 @@ spanCoverage >= 0.45                    // 这个问题有多少被这条记忆�
 | `lib/lifecycle.js` | 衰减、陈旧提示、合并、dream pass |
 | `lib/capture.js` | S1–S7 确定性信号 + 草稿构造 + 收件箱 |
 | `lib/draft.js` | 正文起草：template（默认）/ subagent |
+| `lib/drift.js` | 锚点复查：healthy / quarantined / advisory / not-a-definition / unverifiable |
 | `lib/recall.js` | 5 路 + RRF + 双相关性门 + 三级交付 |
 | `lib/tools.js` | 6 个 `memory_*` 工具 |
 | `lib/command.js` | `/memory` 斜杠命令（人机入口） |
@@ -381,19 +426,25 @@ spanCoverage >= 0.45                    // 这个问题有多少被这条记忆�
 npm test
 ```
 
-119 条测试（含 peer 依赖时 134 条），覆盖设计文档 §14 的 7 条验收 + 全部子系统：
+171 条测试（含 peer 依赖时 186 条），覆盖设计文档 §14 的 **7 条验收全部通过** + 全部子系统：
 
 | 组 | 条数 | 覆盖 |
 |---|---|---|
-| 插件行接线 | 13 | 6 工具 + 1 命令 + 2 监听器 + 1 context；disposer 全部可调用；非法配置直接抛 |
+| 插件行接线 | 13 | 7 工具 + 1 命令 + 2 监听器 + 1 context；disposer 全部可调用；非法配置直接抛 |
 | ACCEPT / REJECT / DEFER | 7 | 三值裁决 + 硬门重跑 + 日志脱敏 |
 | 召回三级 | 5 | content / pointers / abstain + 确定性 + **MMR 不吞掉第二条** |
 | 断言模型 | 25 | 11 条语料规则 + 对账 + sync/rederive 区分 |
 | 生命周期 | 32 | 衰减地板 + 三个有门信号 + 合并 + dream 三个 pass |
+| 漂移 | 23 | 五种判决 + **目标消失 ≠ 切片变了** + 内容寻址往返 |
 | 索引与缓存 | 20 | 纯函数快照 + 发布/回滚/GC + 扫描缓存失效 |
 | 捕获与起草 | 20 | 草稿门 + 收件箱 + 子 Agent 回退 + `markDirty` 是 O(1) |
+| 推广包 | 27 | 硬排除 / 软标记 / 可移植性 + 密钥规则编译 |
 | G8 置信 | 5 | 与语料规模无关 + 锚点覆盖率 + 否定词不误伤「区别」 |
 | 存储 | 3 | 目录布局、`hard_delete` 需要 confirm |
+
+```bash
+node bench/acceptance.mjs     # 设计文档 §14 的 7 条，对真实代码跑
+```
 
 > `@deepseek-ai/schemastery` 是 peer 依赖，由 DSH profile 提供。没装 profile 的机器上
 > 「插件行接线」这组会 **skip**（不是失败）—— 但别用替身骗过它：`Config` 的形状是
