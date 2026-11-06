@@ -11,6 +11,10 @@ DSH 的**协议驱动记忆插件**：Agent 知道自己什么时候该记、什
 > 一条说「PR #10 还开着」的记忆是在做**断言**。它写的时候为真，**永不为跟踪世界而改写**。
 > 解析另存。这样「记忆会过时」这个无解问题，就变成一个可枚举、可对账、可矛盾检测的**结构化积压**。
 
+**只做项目级记忆。** 记忆是仓库级制品 —— 它随仓库进 git、随 PR review、随回滚消失。
+跨项目的那一层由别的插件负责。本插件只提供**出口**（`memory_promote` / `/memory promote`），
+把项目记忆整理成可推广的包，**不写、不读、不索引任何全局存储**。
+
 ---
 
 ## 安装
@@ -40,8 +44,7 @@ dsh plugin install link:/path/to/dsh-memory-bank
       duplicate: 0.82         # 近重复阈值
       coverageFloor: 0.45     # 覆盖门地板
     quota:
-      repo: 200               # 项目层硬上限
-      global: 500
+      repo: 200               # 项目层硬上限（**只有项目层** —— 本插件不做全局记忆）
       growthThreshold: 50     # growth → ratchet 的切换点
     capture:
       enabled: true
@@ -50,12 +53,15 @@ dsh plugin install link:/path/to/dsh-memory-bank
       inject: true
       maxBytes: 4000
       maxPointers: 3
+    promote:
+      format: both            # markdown | json | both
+      minConfidence: verified
+      includeProjectSpecific: true
 ```
 
 | 环境变量 | 作用 |
 |---|---|
 | `DSH_MEMORY_ROOT` | 记忆库项目根（默认取会话工作目录） |
-| `DSH_MEMORY_HOME` | 全局记忆层目录（默认 `~/.dsh-memory`） |
 | `DSH_MEMORY_AUTONOMY` | 自主度 |
 | `DSH_MEMORY_AUTO_ACCEPT_FLOOR` / `DSH_MEMORY_DEFER_FLOOR` | 阈值 |
 
@@ -63,7 +69,7 @@ dsh plugin install link:/path/to/dsh-memory-bank
 
 ---
 
-## 六个工具 + 一条命令
+## 七个工具 + 一条命令
 
 | 工具 | 作用 |
 |---|---|
@@ -72,9 +78,10 @@ dsh plugin install link:/path/to/dsh-memory-bank
 | `memory_pending` | 列待决提案（记忆提案 + 图提案） |
 | `memory_resolve` | accept / reject / edit 一条提案 |
 | `memory_audit` | 全量审计：断言对账 + 生命周期 + 漂移 + `dream` |
+| `memory_promote` | 整理成可推广到全局记忆的包（只读、只提名） |
 | `memory_forget` | 退休 / 删除（破坏性） |
 
-刻意只有 6 个 —— DSH 的工具是稀缺上下文资源。
+刻意只有 7 个 —— DSH 的工具是稀缺上下文资源。第 7 个是**出口**：没有它，项目记忆是一条单行道。
 
 **工具面是给 Agent 的，命令面是给人的。**
 
@@ -86,10 +93,58 @@ dsh plugin install link:/path/to/dsh-memory-bank
 /memory recall <查询>       直接召回
 /memory audit              全量审计
 /memory dream              跑 dream pass 并暂存提案
+/memory promote [--json]   生成可推广到全局记忆的包
 /memory retire <id>        退休一条记忆
 ```
 
 命令**不经过模型** —— 你输入 `/memory accept p_xxx` 就是你的裁决，不需要先让模型转述一遍。这是「拿不准时你有足够强的掌握能力」的落点。
+
+---
+
+## 推广：只产出包，不做全局记忆
+
+**本插件不做全局记忆。** 记忆是仓库级制品；跨项目那一层由别的插件负责。
+
+`memory_promote` 只回答一个问题：**哪些项目记忆换一个仓库还成立？**
+
+```bash
+/memory promote              # 人读的 Markdown 包
+/memory promote --json       # 机器读（schema dsh-memory.promotion/v1）
+/memory promote --write      # 写到 .dsh-memory/export/，返回路径
+```
+
+### 硬排除（永远不出现在包里）
+
+| 条件 | 为什么 |
+|---|---|
+| 终态（`deprecated` / `rejected` / `superseded`） | 已经作废的东西不该扩散 |
+| 含密钥 | **一条泄漏的秘密比一百条没推广的记忆贵** |
+| 没有证据 | 在别的仓库里无法复核 |
+| 置信低于地板 | 默认 `verified` |
+
+### 软标记（进包，但标注出来）
+
+| 标记 | 含义 |
+|---|---|
+| `project-specific-evidence` | 证据全指向项目内路径 —— 换仓库前先确认它是不是通用做法 |
+| `scoped-to-repo` | 适用面限定在当前仓库 |
+| `needs-review` | 已过复查期 —— 推广前先核对 |
+| `dormant` | 90 天未被召回 —— 可能已经不再成立 |
+
+`project-specific-evidence` 刻意**不是**排除条件。「staging 超时先查连接池上限」锚在 `src/db/pool.ts` 上，
+但它换一个仓库仍然成立。机器分不清这两者，所以只标注，**让你在包里看见**。
+
+### 输出必须可移植
+
+包里的绝对路径、会话 id、机器名**一个都不能有**。只保留：仓库名、提交 sha、仓库相对路径。
+
+测试里有一条专门钉这个：`assert.ok(!json.includes(root))`。
+
+### 三种纪律
+
+1. **只提名，不搬运。** 推广与否是人的判断 —— 和 dream 只提议结构、G7 只列最弱候选、`memory_forget` 不自动退休是同一条纪律。
+2. **硬排除必须硬。**
+3. **输出必须可移植。**
 
 ---
 
@@ -456,6 +511,8 @@ node bench/assembly.mjs
 
 ## 非目标
 
+- **不做全局记忆**。记忆是仓库级制品；跨项目那一层由别的插件负责。
+  本插件只提供出口（`memory_promote`），把项目记忆整理成可推广的包 —— **不写、不读、不索引任何全局存储**。
 - **不做云同步**。一个 brain，一个 SQLite/Markdown 目录，全本地。
 - **不做 LLM-as-judge**。协议是纯算术，可复现。
 - **不做自动删除**。唯一的移除路径是显式 `memory_forget`，且 `hard_delete` 需要用户确认。
