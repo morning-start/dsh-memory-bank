@@ -57,6 +57,11 @@ dsh plugin install link:/path/to/dsh-memory-bank
       format: both            # markdown | json | both
       minConfidence: verified
       includeProjectSpecific: true
+    embedding:                # 语义通道；**默认关**
+      provider: none          # none | lexical | http
+      model: text-embedding-3-small
+      endpoint: null          # http 的 /embeddings 地址
+      g1Threshold: null       # G1 用余弦判决的阈值；null = 不参与判决
 ```
 
 | 环境变量 | 作用 |
@@ -259,7 +264,7 @@ B 无关   0.000 – 0.208
 ```
 
 C 的最高分（0.364）离 B 的最高分（0.208）太近 —— 阈值卡在哪里都抓不到改写，
-只会开始误伤 B。**要抓改写得靠 embedding，而它的权重常量现在是 0。**
+只会开始误伤 B。
 
 所以 G1 的实际能力边界是清楚的：
 
@@ -267,6 +272,49 @@ C 的最高分（0.364）离 B 的最高分（0.208）太近 —— 阈值卡在
 
 设计文档写的「保守实现，误判方向偏向 ACCEPT」在这个数据上成立了 ——
 但「偏向 ACCEPT」的代价是**改写一律漏过**，这一点现在有数字了。
+
+### 语义通道：做成了，但**默认关着**
+
+第二次实验用**加权包含度**（不是余弦 —— 余弦被窗口长度惩罚，逐字候选只拿到 0.079，
+那是度量的错）：
+
+```
+A 逐字（该拒）  最低 0.264
+B 无关（该过）  最高 0.200
+C 改写（该拒）  最低 0.204
+分离 = +0.004
+```
+
+**+0.004 不是分离，是 15 个手挑样本上的巧合。** 拿它开闸就是拿误伤换漏报，
+而且用户会以为自己买到了召回。
+
+所以 `lib/embedding.js` 是一个可插拔通道，但开闸不是「配置里写个 true」—— 是跑你自己的语料：
+
+```bash
+node bench/embedding-experiment.mjs
+# 看最后一行：分离（C 最低 - B 最高）
+#   < 0.05  不要开。任何阈值都是噪音。
+#   ≥ 0.15  可以考虑。阈值取两组的中间值，把数字写进 commit message。
+```
+
+| provider | 状态 |
+|---|---|
+| `none` | **默认。** G1 走逐字包含 |
+| `lexical` | 本地确定性向量，**实测不足以做 G1 判决**，只用于诊断 |
+| `http` | 唯一可能真的有效的实现（OpenAI 兼容 `/embeddings`） |
+
+**架构上的硬约束**：`recall` 和 `gate` 都是同步的（每轮 prompt 装配），
+而 HTTP 是异步的。所以 embedding **不在门里调用**，它是**可预先计算的数据**：
+
+```
+语料向量   → 算一次，挂在 owners 数组上（WeakMap）
+候选向量   → 在 memory_remember / 后台 drain（本来就是 async）里算
+门         → 只做同步余弦；拿不到向量就退回逐字包含
+```
+
+**默认路径仍然是同步的。** 只有通道真的开着、而且配了 `g1Threshold` 时
+`memory_remember` 才返回 Promise。这不是为了性能，是为了**诚实**：
+默认配置下的行为和以前逐字节相同，任何一个老测试的通过或失败都还是它自己说的那件事。
 
 ### 顺带挖出的一个静默丢弃
 
@@ -456,6 +504,7 @@ spanCoverage >= 0.45                    // 这个问题有多少被这条记忆�
 | `lib/capture.js` | S1–S7 确定性信号 + 草稿构造 + 收件箱 |
 | `lib/draft.js` | 正文起草：template（默认）/ subagent |
 | `lib/drift.js` | 锚点复查：healthy / quarantined / advisory / not-a-definition / unverifiable |
+| `lib/embedding.js` | 语义通道：none / lexical / http（**默认关**，开闸看 bench 的 margin） |
 | `lib/recall.js` | 5 路 + RRF + 双相关性门 + 三级交付 |
 | `lib/tools.js` | 6 个 `memory_*` 工具 |
 | `lib/command.js` | `/memory` 斜杠命令（人机入口） |
@@ -481,7 +530,7 @@ spanCoverage >= 0.45                    // 这个问题有多少被这条记忆�
 npm test
 ```
 
-173 条测试（含 peer 依赖时 188 条），覆盖设计文档 §14 的 **7 条验收全部通过** + 全部子系统：
+196 条测试（含 peer 依赖时 211 条），覆盖设计文档 §14 的 **7 条验收全部通过** + 全部子系统：
 
 | 组 | 条数 | 覆盖 |
 |---|---|---|
@@ -494,6 +543,7 @@ npm test
 | 索引与缓存 | 20 | 纯函数快照 + 发布/回滚/GC + 扫描缓存失效 |
 | 捕获与起草 | 20 | 草稿门 + 收件箱 + 子 Agent 回退 + `markDirty` 是 O(1) |
 | 推广包 | 27 | 硬排除 / 软标记 / 可移植性 + 密钥规则编译 |
+| 语义通道 | 23 | 默认关 + 永不抛 + 降级要说出来 + 只在显式阈值下判决 |
 | G8 置信 | 7 | 与语料规模无关 + 锚点覆盖率 + 否定词不误伤「区别」 + **标签不被当分数** |
 | 存储 | 3 | 目录布局、`hard_delete` 需要 confirm |
 
