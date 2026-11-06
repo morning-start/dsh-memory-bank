@@ -1,0 +1,36 @@
+{
+  "name": "dsh-memory-bank",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH 协议驱动记忆插件：自主判断该不该记，八道门自审，判不了才交人裁决",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "check": "node --check lib/index.js && node --check lib/config.js && node --check lib/util.js && node --check lib/model.js && node --check lib/store.js && node --check lib/index-build.js && node --check lib/gate.js && node --check lib/recall.js && node --check lib/capture.js && node --check lib/tools.js && node --check lib/hooks.js"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "~3.18.5"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

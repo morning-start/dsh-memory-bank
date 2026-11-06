@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Memory Bank">
+  <defs>
+    <linearGradient id="mb-body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f7cff"/>
+      <stop offset="1" stop-color="#2b4bd8"/>
+    </linearGradient>
+  </defs>
+  <!-- vault body -->
+  <rect x="3.5" y="7.5" width="25" height="19" rx="4" fill="url(#mb-body)"/>
+  <!-- roof line: the bank pediment -->
+  <path d="M4 8.5 L16 2.8 L28 8.5" fill="none" stroke="#4f7cff" stroke-width="2.4"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- gate slot: a single review channel -->
+  <rect x="12.6" y="12.4" width="6.8" height="2.2" rx="1.1" fill="#ffffff" opacity="0.95"/>
+  <!-- three ledger strokes: accepted / rejected / deferred -->
+  <rect x="8.2" y="17.8" width="4.2" height="1.8" rx="0.9" fill="#ffffff" opacity="0.55"/>
+  <rect x="13.9" y="17.8" width="4.2" height="1.8" rx="0.9" fill="#ffffff" opacity="0.78"/>
+  <rect x="19.6" y="17.8" width="4.2" height="1.8" rx="0.9" fill="#ffffff" opacity="0.4"/>
+  <!-- keyhole: the human's adjudication -->
+  <circle cx="16" cy="23" r="1.35" fill="#ffffff" opacity="0.9"/>
+  <rect x="15.35" y="23.6" width="1.3" height="1.9" rx="0.65" fill="#ffffff" opacity="0.9"/>
+</svg>

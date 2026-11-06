@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Memory Bank",
+    "description": "Protocol-driven project memory: the agent decides what is worth remembering, eight gates review every write, and anything the protocol cannot settle is handed to you as a proposal."
+  }
+}

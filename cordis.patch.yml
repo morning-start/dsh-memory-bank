@@ -1,0 +1,6 @@
+# dsh-memory-bank 配置包补丁：在空配置根上追加插件行。
+# 行 id `memory-bank` 是别的 patch 引用本行的稳定锚点 —— 改名时只动 `name`。
+- insert:
+    - id: memory-bank
+      name: 'dsh-memory-bank'
+      config: {}
