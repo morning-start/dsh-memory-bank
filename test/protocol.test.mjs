@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 
 import { resolveConfig } from '../lib/config.js'
+import { computeConfidence, gateConflict } from '../lib/gate.js'
 import { recall, renderRecall } from '../lib/recall.js'
 import { ensureSnapshot } from '../lib/index-build.js'
 import { MemoryError, createToolDefinitions } from '../lib/tools.js'
@@ -301,10 +302,99 @@ describe('三级交付', () => {
     const b = JSON.stringify(recall('staging 连接池', snapshot, { config: cfg }))
     assert.equal(a, b)
   })
+
+  /**
+   * 回归：MMR 曾经把指纹算在**文档对象**上而不是内容上 ——
+   * `tokenize({...})` 一律返回 `["object Object"]`，于是任意两条候选的相似度恒为 1.0，
+   * 第一条之后全部被 suppress。症状是「召回永远只返回一条」。
+   */
+  it('多条相关记忆能一起召回（MMR 不吞掉第二条）', () => {
+    const fixtures = [
+      ['pool_cap', '连接池上限导致 staging 超时', 'staging 健康检查超时的根因是连接池上限'],
+      ['worker_count', 'worker 数量与 staging 超时的关系', 'staging 超时排查里的 worker 数量环节'],
+      ['healthcheck_timeout', '健康检查超时阈值在 staging 的配置', 'staging 健康检查超时阈值的取值'],
+    ]
+    for (const [id, title, about] of fixtures) {
+      tool('memory_remember')({
+        id,
+        title,
+        kind: 'pitfall',
+        about,
+        body: SIX(`${title}。${about}。这一段正文足够长，能让 G5 的特征数过门槛。`),
+        evidence: [{ kind: 'file', ref: 'src/db/pool.ts' }],
+        triggers: ['staging 健康检查超时'],
+      })
+    }
+
+    const { snapshot } = ensureSnapshot(root)
+    const envelope = recall('staging 健康检查 超时 连接池 worker', snapshot, { config: cfg, limit: 3 })
+    assert.equal(envelope.delivery.tier, 'content')
+    assert.ok(
+      envelope.results.length >= 2,
+      `MMR 只留下 ${envelope.results.length} 条 —— 指纹算错了？${JSON.stringify(envelope.mmrSuppressed)}`,
+    )
+    // 结果按 rank 单调
+    assert.deepEqual(
+      envelope.results.map((result) => result.rank),
+      envelope.results.map((_, index) => index + 1),
+    )
+  })
 })
 
-/* ── 6 · 审计与破坏性操作 ─────────────────────────────────────── */
+/* ── 6 · G8 置信 ──────────────────────────────────────────────── */
 
+describe('G8 置信', () => {
+  const base = {
+    id: 'x',
+    title: '连接池上限',
+    kind: 'pitfall',
+    about: 'staging 超时的根因',
+    body: 'staging 超时先看 `src/db/pool.ts` 里的 DB_POOL_MAX。',
+    evidence: [{ kind: 'file', ref: 'src/db/pool.ts' }],
+    scope: ['repo:x'],
+    provenance: 'self-concluded',
+    status: 'active',
+    origin: { signal: 'S7' },
+  }
+
+  it('与语料规模无关（同样的候选永远同样的分）', () => {
+    // 上一版把 coverage 算成「与既有语料的相似度」，导致**第二条同类型记忆
+    // 比第一条更难落盘** —— 那等于惩罚「积累」，而积累是这个系统唯一的目的。
+    assert.equal(computeConfidence(base), computeConfidence({ ...base }))
+    assert.ok(computeConfidence(base) >= 0.6, `实际 ${computeConfidence(base)}`)
+  })
+
+  it('正文没提到的锚点 → 覆盖率 0 → 分数掉下去', () => {
+    const unanchored = { ...base, body: 'staging 超时先看环境变量。' }
+    assert.ok(computeConfidence(unanchored) < computeConfidence(base))
+    assert.ok(computeConfidence(unanchored) < 0.6)
+  })
+
+  it('user-asserted 比 self-concluded 高', () => {
+    assert.ok(computeConfidence({ ...base, provenance: 'user-asserted' }) > computeConfidence(base))
+  })
+
+  it('有 scope 比没 scope 高（适用面清楚是质量信号）', () => {
+    assert.ok(computeConfidence(base) > computeConfidence({ ...base, scope: [] }))
+  })
+
+  it('中文否定词不误伤「区别」「特别」', () => {
+    // G6 的判据是「否定翻转」，假阳性会把两条一致的记忆报成矛盾
+    const a = { ...base, id: 'a', body: '这两者的区别在于连接池上限。' }
+    const b = { ...base, id: 'b', body: '这两者的特别之处在于连接池上限。' }
+    assert.equal(gateConflict(a, { corpus: [b] }).kind, 'pass')
+  })
+
+  it('真的否定翻转仍然报冲突', () => {
+    const a = { ...base, id: 'a', body: '不要改连接池上限。' }
+    const b = { ...base, id: 'b', body: '改连接池上限。' }
+    const verdict = gateConflict(a, { corpus: [b] })
+    assert.equal(verdict.kind, 'refuse')
+    assert.equal(verdict.code, 'conflict')
+  })
+})
+
+/* ── 7 · 审计与破坏性操作 ─────────────────────────────────────── */
 describe('审计与遗忘', () => {
   it('audit 报出规模与健康度', () => {
     tool('memory_remember')({
