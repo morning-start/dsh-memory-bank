@@ -5,7 +5,14 @@ pnpm-lock.yaml
 # 测试与构建产物
 *.log
 .tmp/
+.tmp-*
 coverage/
 
 # 记忆库本身不进这个插件的仓库（它属于被记忆的项目，不属插件）
 .dsh-memory/
+
+# 编辑器
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

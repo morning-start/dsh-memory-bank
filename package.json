@@ -3,7 +3,23 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DSH 协议驱动记忆插件：自主判断该不该记，八道门自审，判不了才交人裁决",
+  "description": "DSH 的项目级记忆插件：Agent 自主判断该不该记，十道门自审，判不了才交人裁决",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "memory",
+    "agent",
+    "mrp"
+  ],
+  "homepage": "https://github.com/morning-start/dsh-memory-bank#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/morning-start/dsh-memory-bank.git"
+  },
+  "bugs": {
+    "url": "https://github.com/morning-start/dsh-memory-bank/issues"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=20.6.0"
@@ -23,7 +39,9 @@
   ],
   "scripts": {
     "test": "node --test \"test/*.test.mjs\"",
-    "check": "node --check lib/index.js && node --check lib/config.js && node --check lib/util.js && node --check lib/model.js && node --check lib/store.js && node --check lib/index-build.js && node --check lib/gate.js && node --check lib/recall.js && node --check lib/capture.js && node --check lib/tools.js && node --check lib/hooks.js"
+    "check": "node scripts/check.mjs",
+    "bench": "node bench/assembly.mjs && node bench/capture.mjs && node bench/g1-eval.mjs",
+    "acceptance": "node bench/acceptance.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/schemastery": "~3.18.5"
