@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 
 import { resolveConfig } from '../lib/config.js'
-import { computeConfidence, gateConflict } from '../lib/gate.js'
+import { computeConfidence, gateConflict, gateConfidence } from '../lib/gate.js'
 import { recall, renderRecall } from '../lib/recall.js'
 import { ensureSnapshot } from '../lib/index-build.js'
 import { MemoryError, createToolDefinitions } from '../lib/tools.js'
@@ -383,6 +383,30 @@ describe('G8 置信', () => {
     const a = { ...base, id: 'a', body: '这两者的区别在于连接池上限。' }
     const b = { ...base, id: 'b', body: '这两者的特别之处在于连接池上限。' }
     assert.equal(gateConflict(a, { corpus: [b] }).kind, 'pass')
+  })
+
+  it('**带 `confidence` 标签的候选不会被静默丢弃**', () => {
+    // `confidence` 这个字段名被两个东西共用：
+    //   条目上是**标签**（verified / inferred / stale），进 frontmatter；
+    //   门要的是**分数**（0–1），由 computeConfidence 算。
+    //
+    // 上一版直接 `candidate.confidence ?? computeConfidence(...)` —— 只要调用方
+    // 带了标签（schema 完全允许），比较就变成 `'verified' >= 0.6`，恒为 false，
+    // 于是每一条这样进来的候选都掉进 `confidence.low` 分支被**丢弃**：
+    // 不建提案、不落盘、只剩一行 `discard: true` 没人看。
+    //
+    // 静默丢弃一条本该记住的记忆，是这个系统最坏的失败方式。
+    for (const label of ['verified', 'inferred', 'stale']) {
+      const verdict = gateConfidence({ ...base, confidence: label })
+      assert.equal(verdict.kind, 'pass', `标签 ${label} 被判成了 ${verdict.kind}:${verdict.code ?? ''}`)
+      assert.equal(typeof verdict.confidence, 'number', 'verdict.confidence 必须是分数')
+    }
+  })
+
+  it('数值 confidence 仍然被尊重（内部调用方用分数）', () => {
+    assert.equal(gateConfidence({ ...base, confidence: 0.9 }).kind, 'pass')
+    assert.equal(gateConfidence({ ...base, confidence: 0.4 }).kind, 'refuse')
+    assert.equal(gateConfidence({ ...base, confidence: 0.1 }).discard, true)
   })
 
   it('真的否定翻转仍然报冲突', () => {
