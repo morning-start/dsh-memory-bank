@@ -11,7 +11,7 @@
 |---|---|---|---|
 | 插件页 | `plugins.html` | `plugins.item` | 「已安装插件」里的记忆库卡片：版本、状态、42 条记忆 / 3 待决 / 2 漂移，入口是这张卡 |
 | 配置页 | `plugin-config.html` | `plugins.row.config` | 六个分组（自主度 / 阈值 / 捕获 / 召回 / 配额 / 高级）+ 每个字段的**来源徽标** + 底部保存条 |
-| 记忆面板 | `memory.html` | `settings.section` | 设置弹窗里的「记忆」页：健康概览 + 待决 / 记忆 / 漂移 / 审计 四个 tab |
+| 记忆面板 | `memory.html` | `conversation.view` | 对话区顶部 View 标签里的「记忆」一栏（0.4.1 前是 `settings.section`）：健康概览 + 待决 / 记忆 / 漂移 / 审计 四个 tab |
 | 项目配置 | `project-config.html` | 记忆页里的抽屉 | 仓库级 `config.json`：只对这个仓库生效的四个字段 + 边界说明 |
 
 四屏之间是真的链接：插件页 →「配置」→ 配置页 →「打开记忆面板」→ 记忆页。
@@ -102,8 +102,8 @@ handoff_design(framework: "same", dest: "E:/Workplace/extension/dsh-memory-bank"
 |---|---|
 | `plugins.html` 的记忆库卡片 | `plugins.item` 注册的 `MemoryCard` |
 | `plugin-config.html` | `plugins.row.config` 注册的 `ConfigPage` |
-| `memory.html` | `settings.section` 注册的 `MemorySection` |
-| `project-config.html` 的抽屉 | `MemorySection` 内的 `ProjectConfigDrawer` |
+| `memory.html` | `conversation.view` 注册的 `MemoryView`（0.4.1 前挂在 `settings.section`） |
+| `project-config.html` 的抽屉 | `MemoryView` 内的 `ProjectConfigDrawer` |
 
 `app.css` 里的组件（`.card` / `.switch` / `.field` / `.source` / `.settingsPanel`）
 在真实实现里应该变成 **CSS Modules**，类名加 `mb-` 前缀

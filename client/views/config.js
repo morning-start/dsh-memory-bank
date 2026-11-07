@@ -1,6 +1,6 @@
 /**
  * 配置面：插件卡片（`plugins.item`）、配置页（`plugins.row.config`）、
- * 项目配置抽屉（`MemorySection` 里的 `ProjectConfigDrawer`）。
+ * 项目配置抽屉（`MemoryView` 里的 `ProjectConfigDrawer`）。
  *
  * ## 这一页唯一的职责：把「作用域」画出来
  *

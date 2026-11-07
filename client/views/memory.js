@@ -1,5 +1,17 @@
 /**
- * 记忆面板（`settings.section`）与它里面的项目配置抽屉。
+ * 记忆面板（`conversation.view`）与它里面的项目配置抽屉。
+ *
+ * ## 为什么是会话视图、不是设置页
+ *
+ * 0.4.x 之前挂在 `settings.section`（设置弹窗左侧导航的一栏）。那个位置的
+ * 问题是**要两级点击才能看见**：设置 → 记忆。而设置页是「改一次就不再进来」
+ * 的地方，记忆库恰恰是「每天看一眼有没有积压」的地方 —— 入口的选择反了。
+ *
+ * 现在挂在对话区顶部那行 View 标签里（`对话 / 轨迹 / 团队视图 / … / 记忆`），
+ * 和它并列的都是**当前会话正在看的东西**。这才是它的实际使用频率。
+ *
+ * 代价是它**只在有会话时存在**（`conversation.view` 的 scope 是 `session`）。
+ * 这是可接受的：没有会话就没有仓库根，面板本来也只能显示「读不到」。
  *
  * ## 为什么默认落在「待决」
  *
@@ -15,7 +27,7 @@
  * ## 双实现不许漂移
  *
  * 这些动作全部走 `memoryBank/<method>`，和 `/memory` 命令面**调同一个函数**
- * （`lib/host/mutations.js`）。面板里不许再写一份过滤或裁决逻辑。
+ * （`lib/adjudicate.js`）。面板里不许再写一份过滤或裁决逻辑。
  *
  * ## 返回形状是「有包裹的」
  *
@@ -251,17 +263,22 @@ function createMemoryController(ctx, t) {
 /* ============================== 视图 ============================== */
 
 /**
- * `settings.section` 的注册体。
- * @param {{ t: Function, close: () => void, memory: any, config: any }} props
+ * `conversation.view` 的注册体 —— 对话区顶部 View 标签里的一栏。
+ *
+ * 容器用 `mb-panel--view` 而不是 `mb-panel`：设置页由 section 容器给内边距，
+ * 对话视图没有那一层，**而且它要自己吃掉整个面板高度**（否则短内容时下面
+ * 留一片空白，长内容时被裁掉）。
+ *
+ * @param {{ t: Function, memory: any, config: any }} props
  */
-function MemorySection(props) {
+function MemoryView(props) {
   const { t } = props
   const memory = props.memory
   const state = React.useSyncExternalStore(memory.subscribe, memory.getSnapshot)
 
   return h(
     'div',
-    { className: 'mb-panel' },
+    { className: 'mb-panel mb-panel--view' },
     h(
       'div',
       { className: 'mb-panel__head' },

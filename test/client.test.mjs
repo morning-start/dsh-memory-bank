@@ -577,7 +577,7 @@ test('client 槽注册：正好三个，name / id / key / order 都对', async (
   assert.equal(registrations.length, 3, `应该正好 3 个注册，实际 ${registrations.length}`)
   assert.deepEqual(
     registrations.map((entry) => entry.options.name).sort(),
-    ['plugins.item', 'plugins.row.config', 'settings.section'],
+    ['conversation.view', 'plugins.item', 'plugins.row.config'],
   )
 
   const item = registrationOf(registrations, 'plugins.item')
@@ -591,12 +591,26 @@ test('client 槽注册：正好三个，name / id / key / order 都对', async (
   assert.equal(row.options.key, 'dsh-memory-bank#memory-bank')
   assert.equal(row.options.id, undefined)
 
-  const section = registrationOf(registrations, 'settings.section')
-  assert.equal(section.options.id, 'memory-bank')
-  assert.equal(section.options.order, 40)
-  assert.equal(section.options.locale, 'memoryBank')
-  assert.equal(typeof section.options.label, 'function', 'settings.section 的 label 必须是 thunk')
-  assert.equal(section.options.label(), '记忆')
+  // 记忆面板是**对话区顶部 View 标签**里的一栏，不是设置页的一栏。
+  // 回归：0.4.x 之前挂在 `settings.section`，要「设置 → 记忆」两级才能看见。
+  const view = registrationOf(registrations, 'conversation.view')
+  assert.equal(view.options.id, 'memory-bank')
+  assert.equal(view.options.order, 60, 'order 决定它排在团队视图之后、Git 之前')
+  assert.equal(view.options.locale, 'memoryBank')
+  assert.equal(typeof view.options.label, 'function', 'conversation.view 的 label 必须是 thunk')
+  assert.equal(view.options.label(), '记忆')
+})
+
+test('client 槽注册：记忆面板**不再**挂在设置页', async () => {
+  const { registrations } = await mount()
+  const names = registrations.map((entry) => entry.options.name)
+  assert.equal(
+    names.includes('settings.section'),
+    false,
+    '记忆面板不该再注册成 settings.section —— 它现在是对话区的 View 标签（docs/07）',
+  )
+  // 也不许偷偷挂第二份到 main 槽。
+  assert.equal(names.includes('main'), false, 'main 槽会替换宿主中央面板')
 })
 
 test('client 槽注册：priority 由运行时分配，不许硬编码', async () => {
@@ -617,7 +631,7 @@ test('client 槽注册：每个 disposer 都是函数，且三个槽都走 injec
   }
   assert.deepEqual(
     injections.map((injection) => injection.owner).sort(),
-    ['plugins.item', 'plugins.row.config', 'settings.section'],
+    ['conversation.view', 'plugins.item', 'plugins.row.config'],
     '每一次 register 都必须包在 ctx.slots.inject 里',
   )
   // effect 的清理函数：字典 + 面板数据各一个。
@@ -931,10 +945,10 @@ test('渲染：行配置页只读，不许把部署配置写进仓库', async ()
 
 test('渲染：记忆面板健康概览 + 待决 + 四道门的解释', async () => {
   const { registrations, t } = await mount()
-  const section = registrationOf(registrations, 'settings.section')
+  const section = registrationOf(registrations, 'conversation.view')
   const injected = section.options.inject()
 
-  const tree = section.component({ t, close: () => {}, ...injected })
+  const tree = section.component({ t, ...injected })
   const text = textOfTree(tree)
 
   for (const expected of [
@@ -962,12 +976,12 @@ test('渲染：记忆面板健康概览 + 待决 + 四道门的解释', async ()
 
 test('渲染：切 tab 能出记忆 / 漂移 / 审计', async () => {
   const { registrations, t } = await mount()
-  const section = registrationOf(registrations, 'settings.section')
+  const section = registrationOf(registrations, 'conversation.view')
   const injected = section.options.inject()
   const { memory } = injected
 
   memory.setTab('memories')
-  let tree = section.component({ t, close: () => {}, ...injected })
+  let tree = section.component({ t, ...injected })
   assert.ok(
     findAll(tree, (node) => node.type === 'input' && typeof node.props.placeholder === 'string').some(
       (node) => node.props.placeholder.includes('搜索记忆'),
@@ -977,27 +991,27 @@ test('渲染：切 tab 能出记忆 / 漂移 / 审计', async () => {
   assert.ok(textOfTree(tree).includes('只用 --dsw-alias-* token'), '记忆列表没有内容')
 
   memory.setTab('drift')
-  tree = section.component({ t, close: () => {}, ...injected })
+  tree = section.component({ t, ...injected })
   let text = textOfTree(tree)
   assert.ok(text.includes('隔离'), '漂移 tab 没有桶名')
   assert.ok(text.includes('src/db/pool.ts:42'), '漂移 tab 没有锚点')
 
   memory.setTab('ledger')
-  tree = section.component({ t, close: () => {}, ...injected })
+  tree = section.component({ t, ...injected })
   text = textOfTree(tree)
   assert.ok(text.includes('裁决'), '审计 tab 没有条目类型')
 })
 
 test('渲染：项目配置抽屉只列仓库属性，并指向配置页', async () => {
   const { registrations, t } = await mount()
-  const section = registrationOf(registrations, 'settings.section')
+  const section = registrationOf(registrations, 'conversation.view')
   const injected = section.options.inject()
   const { memory, config } = injected
 
   // 造一个带仓库属性的快照：直接改控制器里那份数据太脏，用 setProjectConfig
   // 的返回值不方便，所以这里只验证「抽屉打开时用 projectScoped 过滤」。
   memory.openDrawer()
-  const tree = section.component({ t, close: () => {}, ...injected })
+  const tree = section.component({ t, ...injected })
   const text = textOfTree(tree)
   assert.ok(text.includes('项目配置'), '抽屉标题不在')
   assert.ok(text.includes('只对这个仓库生效'), '抽屉副标题不在')

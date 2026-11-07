@@ -12,16 +12,28 @@
  * ## 三个槽都只在这种时候存在
  *
  * `plugins.item` / `plugins.row.config` 由 `client-ui-plugin-manager` 声明，
- * `settings.section` 由 `client-ui-settings-general` 声明 —— 都是「条目挂着
+ * `conversation.view` 由 `client-ui-conversation` 声明 —— 都是「条目挂着
  * 才有」。所以每一次 `register` 都必须包在 `ctx.slots.inject(owner, cb)` 里：
  * 槽塌陷时 effect 被释放，槽回来时 cb **重新跑一遍**。
  * 因此 cb 里**不许有副作用**，且必须返回 disposer（`CONTRACT.md` §8 第 9 条）。
  *
- * ## 为什么不用 `main` 槽
+ * ## 为什么记忆面板挂在 `conversation.view` 而不是设置页
  *
- * 不是因为 `main` 危险（`replaceRisk: shadows-shipped-ui` 只对**已占用的
- * key** 生效），而是因为「记忆面板」本来就是设置页里的一栏 —— 放进 `main`
- * 等于多开一个侧栏入口去承载一个只读列表。这是产品判断（`docs/07` §2.9 ①）。
+ * 0.4.x 之前挂在 `settings.section`（设置 → 记忆）。那个位置要**两级点击**
+ * 才能看见，而设置页是「改一次就不再进来」的地方 —— 记忆库恰恰是
+ * 「每天看一眼有没有积压」的东西，入口的选择反了。
+ *
+ * 现在它是对话区顶部 View 标签里的一栏（`对话 / 轨迹 / 团队视图 / … / 记忆`），
+ * 和它并列的都是**当前会话正在看的东西**。
+ *
+ * 代价：`conversation.view` 的 scope 是 `session`，所以**没有会话就没有这一栏**。
+ * 可接受 —— 没有会话就没有仓库根，面板本来也只能显示「读不到」。
+ *
+ * ## 为什么不改成 `main` 槽
+ *
+ * `main` 是「侧栏条目选中后渲染的中央面板」，key 由 owner 派发。挂上去等于
+ * 在侧栏多开一个入口去承载一个只读列表 —— 而侧栏是**切换工作上下文**的地方，
+ * 不是「看当前仓库的积压」的地方。View 标签正好是后者。
  */
 
 /** 样式标签的 dedupe 键。改它等于换一份样式表 —— 旧标签会留着（HMR 陷阱）。 */
@@ -223,18 +235,21 @@ function apply(ctx) {
     ),
   )
 
-  // ③ 「记忆」设置页（设置弹窗左侧导航的一栏）
-  ctx.slots.inject('settings.section', () =>
+  // ③ 「记忆」View 标签（对话区顶部那行 `对话 / 轨迹 / 团队视图 / …` 里的一栏）
+  //
+  // 为什么放在最后而不是最前：`order` 决定它排在哪一栏。60 让它在团队视图
+  // 之后、Git 之前 —— 这两个是「看当前会话的数据」，记忆面板和它们同类。
+  ctx.slots.inject('conversation.view', () =>
     ctx.slots.register(
       {
-        name: 'settings.section',
+        name: 'conversation.view',
         id: 'memory-bank',
-        order: 40,
+        order: 60,
         label: () => t('panelTitle'),
         locale: NS,
         inject: () => ({ memory, config }),
       },
-      MemorySection,
+      MemoryView,
     ),
   )
 }

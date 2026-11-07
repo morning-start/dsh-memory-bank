@@ -860,6 +860,36 @@ const CSS = `
   line-height: 1.5;
 }
 
+/*
+ * 作为对话区 View 标签里的一栏时。
+ *
+ * 设置页里内边距由 section 容器给，对话视图没有那一层 —— 而且它必须
+ * **自己吃掉整个面板高度**：短内容时下面留一片空白，长内容时被裁掉，
+ * 两种都不对。
+ *
+ * 用 flex:1 + min-height:0 而不是 height:100%：宿主的 viewArea 本身
+ * 就是 flex:1 / min-height:0 的列 flex 容器，跟着它的语言写才不会在
+ * 某次布局改动后失配。
+ *
+ * 左右 28px 对齐 viewArea 同级的头部内边距，让标题和标签落在同一条竖线上。
+ */
+.mb-panel--view {
+  box-sizing: border-box;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 28px 40px;
+}
+
+/*
+ * 滚动容器里的 flex 子项默认会「压缩到 min-content」而不是「溢出」——
+ * 列表和卡片被压扁比出现滚动条更糟。flex:none 让它们保持自然高度，
+ * 由容器负责滚动。
+ */
+.mb-panel--view > * {
+  flex: none;
+}
+
 .mb-panel__head {
   display: flex;
   align-items: flex-start;
