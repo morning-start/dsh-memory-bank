@@ -6,6 +6,240 @@
 
 ---
 
+## [0.3.0] - 2026-11-07
+
+> 这一版只做一件事：**把「机制写好了、就是没接上」这类缺口堵死**。
+> 五条 P0/P1 全是「字段/函数已经有了、只差最后一根线」，外加两条 CI 硬门。
+> 详见 [docs/09](docs/09-参考分析-memory-bank-skill.md)。
+
+### Added · 死导出硬门（`scripts/check.mjs` 第三相）
+
+- **为什么**：这是这个仓库**反复**栽的同一个坑 —— `pinned` 进了快照但召回不读、
+  `resolveClaim` / `syncClaims` / `rederiveClaims` 写了没人调、
+  `syncClaims` 的判据因为一个字段没落盘而恒 false。三处都是
+  「机制写好了、测过了、**就是没接上**」，而它们**没有任何一条测试会红**。
+- **先测量再建**：本机没有任何现成工具（`knip` / `eslint` / `tsc` / `depcheck`
+  全无，`devDependencies` 为空），于是写了一个只读探针自建，**逐条 grep 核对误报**：
+  - 第一版 16 个疑似，1 个假阳性（`CONSOLIDATION` 被用作 `export function` 的默认参数，
+    而探针把所有 `export` 行都跳过了）→ **6.25% 假阳性**；
+  - 修掉 `selfUses` 后 **15 个全部为真**（**0 假阳性 / 291 个导出**）。
+- **判据三级**（纯词边界扫描，不做语法分析 —— 假阴性可接受，要挡的是假阳性）：
+  被 `lib/` 外引用 → 有外部消费者；只被 `lib/` 内引用 → 内部使用；
+  只被定义文件自身引用 → 死导出。
+- **结果**：15 个死导出全部删除（`util.js` 7 个纯 helper、`claims.js` 2 个常量、
+  `drift.js` / `gate.js` / `guards.js` / `index-build.js` / `model.js` /
+  `endpoints.js` 各 1 个）。
+- **纪律**：允许名单是 `Map<路径#名字, 理由>` 而不是 `Set` ——
+  **一个不给理由的豁免就是一个忘记删的死代码**（`test/routes.test.mjs` 钉住这一点）。
+- **回归**：负例验证过（加一个 `export function deadProbeExport()` → 退出码 1 并点名）。
+
+### Added · `npm run doctor`：从外部自检「装好了吗」
+
+- **为什么**：`memory_audit` 回答的是「**记忆**健康吗」—— 但它跑在插件**里面**：
+  能跑就说明插件加载成功了，于是「装好了吗」这个问题它答不了。
+- 而装不上有六种互相独立的方式，**每一种的症状都是「什么都没发生」**：
+  peer 依赖没链接 / `lib/` 某个模块解析失败 / `.dsh-memory/` 布局缺项 /
+  配置 JSON 坏了（静默降级）/ 快照陈旧（召回到上一次的语料）/
+  客户端产物与源不一致（界面看到旧代码）。
+- **修法**：`scripts/doctor.mjs`，10 项检查，三级输出（`✓` / `⚠` / `✗`），
+  退出码 0/1，`--json` 机器读。**每一条 `warn` / `error` 都必须带 `hint`** ——
+  一个只说「坏了」不说什么修的自检，等于让用户去猜。
+- **纪律**：**只读**。不 `ensureLayout`、不 `mkdir`、不写任何文件 ——
+  一个「自检」如果会改状态，那它就不能在被怀疑的时候跑。
+- **回归**：`test/doctor.test.mjs` 13 条（本仓库全绿 / 临时仓库里布局、快照、
+  回执、inbox、坏配置、陈旧快照各跑一次 / `only` `skip` 编排 / 只读不变式）。
+- **文档**：`docs/09` §5.1 记录了 P1-1（Read Gate）与 P1-2（归档）的**不抄裁决** ——
+  前者是 DSH 缺「warn 但不拦」的机制（`PreToolDecision` 只有四态），
+  后者是「没被测过的复杂度」，按项目纪律先量再做。
+
+### Fixed · 重写一条记忆会**静默抹掉**已学到的断言对账结果
+
+- **根因**（`lib/model.js:268-275`）：`serializeEntry` 只写 `claims` 的
+  `kind` / `ref` / `state` 与三列 resolution，**从不写 `evidence`**。
+  而 `syncClaims` 的判据是 `old.evidence === claim.evidence` ——
+  读回来 `old.evidence` 恒为 `undefined`，**恒 false**。
+- **后果**：`memory_remember` 重写任何一条已有记忆（哪怕只改 `scope`、
+  正文一个字节都没动）都会走 `extractClaims` 而不是 `syncClaims`，
+  于是「PR #10 已经合并了」这条对账**无声消失**。而返回值是「已记住」、
+  回执正常、没有任何一条测试会红 —— 这条机制从写下来那天起就是死代码。
+- **修法**：`evidence` 落盘（**不进** `contentHash` —— 它是抽取器的产物，
+  不是「这条断言是什么」的一部分）。
+- **回归**：`test/reconcile.test.mjs`「重写记忆不能抹掉对账结果」2 条。
+
+### Added · 断言对账的**写入口**（`resolveClaim` 终于有生产调用者）
+
+- **为什么**：`docs/09` §4.4 的 B1 —— `resolveClaim` / `syncClaims` /
+  `rederiveClaims` 三个函数写了、测了、**全仓无生产调用者**，
+  `memory_resolve` 的 `EDITABLE_FIELDS` 也不含 `claims`。于是三列
+  只能手改 Markdown 文件，而「断言对账」的全部价值在「后来学到的」那一半。
+- **修法**：
+  - 写入路径改走 `syncClaims`（正文没动保留、动了才丢弃）。
+  - `memory_resolve` 的 `edit.claims` 是**补丁列表**不是整体替换 ——
+    `pickClaimPatches` 白名单只留 `resolvedState` / `resolvedBy` / `resolvedAt`，
+    `state` **永不改写**（`docs/01:99`：散文是诚实的历史）。
+  - 没命中的 ref → **整次失败、不写任何东西**（部分应用 + 静默丢弃是最糟的组合）。
+  - `memory_audit` 报 `extractionDrift`（存下来的 `state` 与重新抽取是否一致）——
+    **只报告不改**：审计判不了是「抽取器变聪明了」还是「正文被手改过」，
+    而这两者的处理方式**相反**。
+- **回归**：`test/reconcile.test.mjs` 8 条。
+
+### Added · 写入口收口：`tools/pre-execute` 拦对 `.dsh-memory/` 的直写
+
+- **为什么**：十道门只挂在 `memory_remember` 一条路径上。模型可以 `write`
+  一个 `.dsh-memory/memories/foo.md` **绕过全部门** —— 没有回执、不进
+  `ledger.jsonl`、`markDirty` 不跑（索引不知道）。于是「这个仓库的每条记忆
+  都过了协议」这句话就是假的。
+- **修法**：`lib/guard.js` 挂 `tools/pre-execute`，返回 **`ask`**（不是 `deny`）。
+  DSH 的 `PreToolDecision` 四分支 `allow | deny | cancel | ask`，
+  且没有审批面的宿主会自动把 `ask` 降级成拒绝 —— 不用我们判断。
+- **路径判定纪律**：**用路径 API，不用正则**（对方
+  `learnings/2026-01-31-bash-guard-aggressive-path-match.md` 就是正则
+  `/memory-bank/` 误伤 `skills/memory-bank/` 打出来的）。所有身份判定走
+  `util.canonicalPath`；正则只做预筛。
+- **回归**：`test/guard.test.mjs` 38 条，其中一半是反例：
+  `.dsh-memory-evil/`（前缀陷阱）、`../.dsh-memory/`（逃出仓库）、
+  `echo "a > b"`（引号里的重定向）、`cat .dsh-memory/x.md`（读不是写）。
+
+### Changed · 路径身份统一到 `util.canonicalPath`
+
+- `normalizeRef`（不折叠大小写）与 `recall.exactNormalize`（折叠）**不是**
+  重复实现 —— 它们回答两个不同的问题（「怎么展示」vs「像不像」）。
+  真正缺的是**一个「是不是同一个文件」的函数**：`canonicalPath(root, raw)`，
+  按平台折叠（`win32` / `darwin`）、越界返回 `null`。
+- `exactNormalize` 改为 `normalizeRef(v).toLowerCase()` —— 底层变换只有一份，
+  上一版手抄了一遍，于是少了 `//` 折叠。
+- `writeFileAtomic` 的临时名加**进程内单调序号**：只靠 `Date.now()` 时
+  同一毫秒的两次写会算出同一个临时名，Windows 上 `rename` 直接 `EPERM`，
+  而原子性在那之前已经没了。
+- **回归**：`test/guard.test.mjs`「canonicalPath：同一个文件只有一个身份」5 条。
+
+### Added · 目录 README 路由层 + `pinned` 常驻注入
+
+- **为什么**：召回是**词面**匹配（exact / BM25F / ngram / fuzzy / graph 五路全部
+  依赖字面重合），于是「语义相关但词面不重合」的查询打不中 —— 而语义通道
+  **实测分离度 −0.139**（`bench/embedding-experiment.mjs`：A min 0.314 −
+  B max 0.421，「相关但不同」比「同义改写」更相似），补不上这个洞。
+  `pinned` 字段更是**进了快照但召回侧不读**，于是「这个仓库的长期约束」在
+  查询不命中时完全不可见（`docs/04:90` 已承认「召回过滤未接」）。
+- **修法**（两半，缺一不可）：
+  - **项目文档侧** —— 新增 `lib/routes.js`：纯读扫描含 `.md` 的目录（**只一层**，
+    不递归），解析 `README.md` 索引，产出 `missing-readme` / `unlisted` /
+    `missing` 三类判决。`scripts/check.mjs` 加**硬门**（CI 不过就是红），
+    并自举补上 `docs/README.md`。
+  - **记忆侧** —— `recall()` 先选 `pinned` 条目（白名单 `active`/`advisory`、
+    排除过期、**加性于 `limit`**、独立预算 `recall.maxPinned` 默认 5），
+    `renderRecall` 每档都先渲染常驻段；`abstain` 档补**确定性兜底**
+    （点名目录 `README.md` + `glob`），不再只说「没找到」。
+  - `memory_audit --routes` 把目录路由并进审计报告。
+- **纪律**（三条都能在仓库自己的注释里找到同型教训）：
+  - **路径匹配用路径 API，正则只做预筛** —— 对方的
+    `learnings/2026-01-31-bash-guard-aggressive-path-match.md` 就是正则
+    `/memory-bank/` 误伤 `skills/memory-bank/` 打出来的。
+  - **`pinned` 不记访问** —— 它每轮都在，记了就是恒定饱和，等于把
+    「这条多久没被需要」这个信号删掉。
+  - **`missing` 只认「干净的本地文件名」** —— `**/*.md`、`file.md:191-202`
+    这类引用不能算「本目录登记了」，否则跨仓库的行号引用会变成假的失败，
+    而假失败会训练人忽略检查。
+- **回归**：`test/routes.test.mjs` 20 条（三种列法 / 四个反例 / 缓存必须因
+  目录内新增文件而失效 / 本仓库自检 / CI 硬门真的接了）、
+  `test/recall.test.mjs` 常驻层 8 条、`test/plugin.test.mjs` 2 条
+  （schema 暴露 `routes`、`context` 端到端同时渲染 pinned 与兜底）。
+  现测 **436 tests / 436 pass**、`check` 65 文件、验收 7/7（32 模块零网络）。
+- **参考**：`docs/09-参考分析-memory-bank-skill.md` 的 P0-3 与 P1-4。
+
+### Fixed · 同 id 不同标题**静默覆盖**另一条记忆（数据丢失）
+
+- **根因**：`normalizeId` 把 `[\s-]` 统一成 `_`、丢掉其余非 ASCII 字母数字，
+  这个映射**按设计是多对一的**（`deploy-staging` / `deploy_staging` /
+  `deploy staging` 被当成同一条记忆）。但「同一条」是**猜测** —— 两条真正不同
+  的记忆撞上同一个 slug 时，`writeEntry` 直接 `writeFileAtomic` 覆盖文件：
+  正文、回执、`supersedes` 链一起消失，而 `memory_remember` 返回「已记住」。
+  G2 判据 2「id 在语料里唯一」（`docs/03:195`）当时**没有任何消费者**。
+- **修法**：`writeEntry` 就是那个消费者 —— **同 id 但标题不同** → 抛
+  `id-collision`（`memory_remember` 转成带 `next` 的 `input` 错误，并记
+  ledger `G2:id.collision`）。同 id + **同标题**仍是合法的「重写这条记忆」；
+  `memory_resolve` 的 `edit` 与 merge 合并显式传 `{ overwrite: true }` ——
+  意图写在调用点，而不是靠默认值。
+- **回归**：`test/collision.test.mjs` 5 条（归一化是多对一的 / 拒绝覆盖且旧记忆
+  原样保留 / 同标题可重写 / `overwrite` 才许跨标题 / 不同 id 互不影响）。
+
+### Fixed · 配置页 33 个「用户偏好」字段可编辑但保存**静默丢弃**
+
+- **根因**：`describeConfig` 的 `writable` 是
+  `source !== 'env' && source !== 'row'` —— 少了「是不是仓库属性」这一半。
+  界面唯一的写入口是 `setProjectConfig`（写项目层），而项目层只认
+  `PROJECT_KEYS`。于是 `autonomy` / `thresholds.*` / `recall.*` / `promote.*` /
+  `embedding.*` / `conflict.*` / `root` 这 **33 个叶子字段**可编辑，保存却返回
+  `ok: true` 且 `written: {}` —— 值静默回弹、零提示。正是 0.1.1 花一整版修的
+  「作用域不可见」，在 UI 层又造了一个。
+- **修法**：`writable: PROJECT_KEYS.includes(top) && source !== 'env' && source !== 'row'`
+  （与 `projectWritable` 同判据）。补一条整表不变量：**可写的字段必须全部是
+  仓库属性**，否则红。
+
+### Fixed · 「行配置」页把**部署配置写进仓库**
+
+- **根因**：`plugins.row.config`（部署配置层）与 `plugins.item` 复用同一个
+  `ConfigForm` → 同一个 `save()` → `setProjectConfig`。在这一页保存会写进
+  `<repo>/.dsh-memory/config.json`（进 git、影响团队），来源徽标当场从
+  「部署配置」翻成「项目配置」—— 层语义被 UI 反转。
+- **修法**：这一页**只读** —— 整页包在 `fieldset[disabled]` 里（比逐个字段
+  传 `disabled` 可靠，漏一个就是一个静默丢弃的入口），保存条整块不渲染，
+  并写明「这一层在 profile 的 `cordis.patch.yml` 里改」。
+- **回归**：`test/client.test.mjs` ·「渲染：行配置页只读」断言只读说明存在、
+  只读 fieldset 存在、没有任何「保存」主按钮。
+
+### Fixed · 推广包的密钥硬排除在默认配置下**完全失效**（密钥外泄）
+
+- **根因**：`lib/promote.js` 的 `config.safety?.forbidden ?? DEFAULT_FORBIDDEN`。
+  `defaultConfig().safety.forbidden` 是 **`[]` 不是 `undefined`**，`??` 永不短路
+  ⇒ 默认配置下规则表为空 ⇒ 密钥原样进包（`memory_promote` 的 schema 描述写着
+  「含密钥…永远不出现在包里」，`write: true` 还会写成一份**用来分享**的 md）。
+- **第二条路径**：`containsSecret` 只拼 `title/about/body`，而 `gateSafety`
+  （`lib/gate.js:350-352`）**扫** `evidence[].excerpt` —— 把密钥贴进摘录就绕过整道门。
+- **修法**：与 G3 同形 `[...DEFAULT_FORBIDDEN, ...(Array.isArray(...) ? ... : [])]`；
+  `haystack` 补 `evidence[].excerpt`。
+- **回归**：`test/promote.test.mjs` ·「硬排除 · 默认配置（回归）」3 条
+  （默认配置 / 摘录 / 用户规则是追加不是替换）。
+
+### Fixed · `ask()` 的 rejected promise 变成 `unhandledRejection`（**能崩宿主**）
+
+- **根因**：`lib/hooks.js` 的 `ask?.(question) ?? log(...)`。`??` 只看
+  `null`/`undefined`；宿主 `userQuestions.ask()` 返回 **Promise**，用户取消 /
+  没有提问出口时就是 rejected ⇒ 没人接 ⇒ `unhandledRejection` ⇒ Node 22 默认
+  **终止宿主进程**。挂在「后台 drain」上，用户不会把崩溃和「记忆库连续判不了」联系起来。
+- **修法**：显式分流 —— 同步异常走 `catch`，thenable 挂 `.then(undefined, log)`，
+  只有 `null`/`undefined` 才降级为 log。提问是**尽力而为**，失败只记日志。
+
+### Fixed · 记忆库根目录解析（**项目级记忆功能整体不可用**）
+
+> 这不是「显示错了」：G4 是硬门，而插件设计上要求至少一条文件锚点。
+> 根目录解析不到仓库 ⇒ 所有文件锚点都过不了 G4 ⇒ `memory_remember` **永远写不进去**；
+> 即使绕开 G4，记忆也写进 DSH profile，不是仓库。
+
+- **根因**：`lib/index.js` 的 `createResolver` 与 `lib/host/service.js` 的
+  `createRootResolver` 都读 `agent?.ctx?.workingDirectory`。宿主
+  （`@deepseek-ai/dsh-working-directory@0.2.1-rc.3`）把服务挂在**插件自己的 ctx**
+  上、靠 `inject` 拿，且 `get()` 收的是 **Session**；访问未 inject 的服务
+  cordis 直接抛（`@deepseek-ai/cordis/lib/index.js:676`）。于是每次必抛 →
+  被 `catch` 吞掉 → **静默**回退 `process.cwd()`（= `~/.dsh/profiles/<profile>`）。
+  同一份逻辑还有第二处错：`service.root()` 调 `resolveRoot()` **不传 agent**，
+  所以即使注入了带会话分支的解析器，那一段也恒不命中。
+- **修法**：整条解析逻辑收到 `lib/root.js`（**单一实现**，两份镜像删除）；
+  `lib/index.js` 用 `ctx.inject(['workingDirectory'])` 把宿主服务交给它。
+  优先级：行 `config.root` > `DSH_MEMORY_ROOT` > `workingDirectory.get(session)`
+  > `session.header.cwd` > 面板面的「最近一次会话目录」> 进程 cwd。
+  **最后一级不再静默**：cwd 落在 `DSH_HOME` 里时直接抛 `RootUnresolvedError`。
+- **顺带修掉的一个陷阱**：`workingDirectory.get()` 在本会话没有记录时会退化成
+  服务自己的 `defaultDirectory`（默认就是 `process.cwd()`）—— 那个值不是会话
+  目录，用它正好复现本 bug。解析器现在和 `defaultDirectory` 比一次，相同就
+  说明「没有记录」，改走 `session.header.cwd`。
+- **回归**：`test/root.test.mjs`（12 条，**不依赖 peer**）· 其中
+  「真实宿主形状：服务没有本会话记录 → 必须改用 header.cwd」用宿主真实的
+  `exec.agent` 形状断言；「端到端：项目里的文件锚点必须能过 G4」直接跑
+  `gateEvidence`，并断言**修复前的根（进程 cwd）上同一个锚点必然失败**。
+
+---
+
 ## [0.2.0] - 2026-11-07
 
 > **配置面从 yaml / 环境变量搬进人机界面。**

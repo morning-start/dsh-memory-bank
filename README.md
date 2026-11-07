@@ -137,15 +137,16 @@ Agent 调 `memory_remember`，十道门跑完：
 
 | | |
 |---|---|
-| 版本 | **0.2.0**（配置面 UI） |
-| 测试 | **320 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 12 条接线测试） |
+| 版本 | **0.3.0**（注入面 + 写入口 + 两条 CI 硬门） |
+| 测试 | **495 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 15 条接线测试） |
 | 验收 | 设计文档 §14 的 7 条**全部通过**（`node bench/acceptance.mjs`） |
-| 基准 | G1 真阳性 **4/10** · 完整协议 **9/15** · 精度 **60.0%**；语义分离 **−0.020 ~ +0.063**（抖动，不够开闸） |
-| 规模 | 25 个服务端模块 + 浏览器端 `client/` · 约 400 KB |
+| 基准 | G1 真阳性 **4/10** · 完整协议 **9/15** · 精度 **60.0%**；语义分离 **−0.139**（不可分离，见 `bench/embedding-experiment.mjs`） |
+| 规模 | **33** 个服务端模块 + 浏览器端 `client/` · 约 420 KB |
 | 依赖 | 仅 `@deepseek-ai/schemastery`（peer）；浏览器端零依赖（React 由平台种子表提供） |
 
 ```bash
-npm test                      # 320 条单测（需先链接 peer，见 docs/07 §5）
+npm test                      # 495 条单测（需先链接 peer，见 docs/07 §5）
+npm run doctor                # 自检：装好了吗（10 项，只读，退出码 0/1）
 node bench/acceptance.mjs     # 验收 7 条
 node bench/g1-eval.mjs        # G1 拿本仓库自己的文档实测
 node bench/assembly.mjs       # 装配路径基准
@@ -193,6 +194,8 @@ node bench/capture.mjs        # 捕获路径基准
 | [04-实施计划](docs/04-实施计划.md) | 里程碑与当前状态 |
 | [05-实测与踩坑](docs/05-实测与踩坑.md) | 真 bug 的复盘（0.1.0 四个 + 0.1.1 十七个）、G1 与语义通道的实验数据 |
 | [07-配置面UI设计](docs/07-配置面UI设计.md) | 把配置从 yaml / 环境变量挪到人机界面的模块设计（**设计稿，未实现**） |
+| [08-代码审核](docs/08-代码审核.md) | v0.2.0 的代码审核：P0 × 5 · P1 × 25 · P2 × 48，以及修复状态 |
+| [09-参考分析-memory-bank-skill](docs/09-参考分析-memory-bank-skill.md) | 对着 chuck-ma/memory-bank-skill 逐机制对照：注入面缺什么、哪些该抄、哪些是陷阱 |
 | [CHANGELOG](CHANGELOG.md) | 每个版本的修复清单 |
 
 ---
