@@ -26,7 +26,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import vm from 'node:vm'
 
-import { GATE_HINTS, METHODS, NAMESPACE, SOURCES } from '../shared/endpoints.js'
+import { GATE_HINTS, METHODS, MUTATIONS, NAMESPACE, QUERIES, SOURCES } from '../shared/endpoints.js'
 import { OUTPUT, PARTS, buildClient } from '../scripts/build-client.mjs'
 
 /** 签入的产物。所有源码级断言都扫它，不是扫 `views/*.js`。 */
@@ -296,73 +296,87 @@ const LEDGER = [
 ]
 
 /**
- * 假 `ctx.remote.memoryBank`。每个方法都记下调用，方便断言「写的是不是它」。
+ * 假 `ctx.connection.rpc` —— **真实载体**，不是 `ctx.remote.memoryBank`。
+ *
+ * 为什么不假 `remote.memoryBank`：第三方包拿不到那一面（`typert.remote-client.js`
+ * 是构建期产物，被内联进宿主自己的 client bundle）。真实可用的只有原始载体
+ * `POST /api/memoryBank/<method>`，body 是 `{ payload: { args } }`，`args` 是
+ * **具名对象**（网关 `assertExactArguments` 按名字校验）。
+ *
+ * 所以这个假货实现的是 `rpc.call(channel, endpoint, payload)`，并把具名参数
+ * 按 `shared/endpoints.js` 的 `args` 表还原成位置数组（`calls[].args`），
+ * 让断言仍然能写 `args[0]`。
  *
  * 返回形状**照 `lib/host/queries.js` 的实际实现**：`pending` 是
  * `{ total, items }`、`drift` 是四个桶 + `counts` + `checked`，都不是裸数组。
  * 写操作返回 `MutationResult`（`{ ok: true, value, text }`），外面还套一层
  * RPC 信封 —— 和真实线上一致。
- * @returns {{ calls: Array<{ method: string, args: unknown[] }>, face: Record<string, Function> }}
+ * @returns {{ calls: Array<{ channel: string, method: string, args: unknown[], named: object }>, rpc: object }}
  */
 function createFakeRemote() {
   const calls = []
-  const record = (method, value) => (...args) => {
-    calls.push({ method, args })
-    return Promise.resolve({ ok: true, value })
+  const mutations = new Set(Object.values(MUTATIONS).map((entry) => entry.method))
+  const argNames = Object.fromEntries(
+    [...Object.values(QUERIES), ...Object.values(MUTATIONS)].map((entry) => [entry.method, entry.args]),
+  )
+
+  const responders = {
+    overview: OVERVIEW,
+    pending: { total: PENDING.length, items: PENDING },
+    memories: [
+      {
+        id: 'm_1',
+        title: '只用 --dsw-alias-* token',
+        kind: 'convention',
+        status: 'active',
+        confidence: '0.8',
+        updatedAt: new Date(Date.now() - 600_000).toISOString(),
+        accessCount: 4,
+        lastRecalledAt: new Date(Date.now() - 300_000).toISOString(),
+      },
+    ],
+    drift: {
+      quarantined: DRIFT,
+      advisory: [],
+      unsafePath: [],
+      notADefinition: [],
+      counts: { quarantined: 1, advisory: 0, unsafePath: 0, notADefinition: 0 },
+      checked: 12,
+      unverifiable: 0,
+      at: new Date().toISOString(),
+    },
+    claims: {
+      open: 7,
+      openActionable: 3,
+      contradicted: 2,
+      unverified: 1,
+      resolved: 4,
+      total: 14,
+    },
+    ledger: LEDGER,
+    config: CONFIG_SNAPSHOT,
+    projectConfig: { path: 'config.json', exists: true, value: {} },
   }
-  const mutation = (method) => (...args) => {
-    calls.push({ method, args })
-    return Promise.resolve({ ok: true, value: { ok: true, value: null, text: '已处理' } })
-  }
-  return {
-    calls,
-    face: {
-      overview: record('overview', OVERVIEW),
-      pending: record('pending', { total: PENDING.length, items: PENDING }),
-      memories: record('memories', [
-        {
-          id: 'm_1',
-          title: '只用 --dsw-alias-* token',
-          kind: 'convention',
-          status: 'active',
-          confidence: '0.8',
-          updatedAt: new Date(Date.now() - 600_000).toISOString(),
-          accessCount: 4,
-          lastRecalledAt: new Date(Date.now() - 300_000).toISOString(),
-        },
-      ]),
-      drift: record('drift', {
-        quarantined: DRIFT,
-        advisory: [],
-        unsafePath: [],
-        notADefinition: [],
-        counts: { quarantined: 1, advisory: 0, unsafePath: 0, notADefinition: 0 },
-        checked: 12,
-        unverifiable: 0,
-        at: new Date().toISOString(),
-      }),
-      claims: record('claims', {
-        open: 7,
-        openActionable: 3,
-        contradicted: 2,
-        unverified: 1,
-        resolved: 4,
-        total: 14,
-      }),
-      ledger: record('ledger', LEDGER),
-      config: record('config', CONFIG_SNAPSHOT),
-      projectConfig: record('projectConfig', { path: 'config.json', exists: true, value: {} }),
-      accept: mutation('accept'),
-      reject: mutation('reject'),
-      edit: mutation('edit'),
-      retire: mutation('retire'),
-      forget: mutation('forget'),
-      dream: mutation('dream'),
-      promote: mutation('promote'),
-      setProjectConfig: mutation('setProjectConfig'),
-      resetProjectConfig: mutation('resetProjectConfig'),
+
+  const rpc = {
+    call(channel, endpoint, payload) {
+      const method = String(endpoint).slice(String(endpoint).indexOf('/') + 1)
+      const named = payload?.args ?? {}
+      const args = (argNames[method] ?? []).map((name) => named[name])
+      calls.push({ channel, method, args, named })
+
+      if (method in responders) return Promise.resolve({ ok: true, value: responders[method] })
+      if (mutations.has(method)) {
+        return Promise.resolve({ ok: true, value: { ok: true, value: null, text: '已处理' } })
+      }
+      return Promise.resolve({
+        ok: false,
+        error: { code: 'gateway/unknown-endpoint', message: `未知方法 ${method}` },
+      })
     },
   }
+
+  return { calls, rpc }
 }
 
 /**
@@ -408,7 +422,7 @@ function createFakeCtx() {
   const ctx = {
     locale,
     slots,
-    remote: { memoryBank: remote.face },
+    connection: { rpc: remote.rpc },
     effect(callback) {
       const dispose = callback()
       disposers.push(dispose)
@@ -526,22 +540,26 @@ test('client 加载：id 等于包名，factory 返回带 apply 的 exports', as
   assert.ok(Array.isArray(mod.inject))
 })
 
-test('client 加载：inject 只声明必然存在的服务（**不**写 remote.memoryBank）', async () => {
+test('client 加载：inject 只声明必然存在的服务（不写 remote.memoryBank）', async () => {
   const { module: mod } = await mount()
   assert.ok(mod.inject.includes('slots'), 'inject 缺 slots')
   assert.ok(mod.inject.includes('locale'), 'inject 缺 locale')
-  assert.ok(mod.inject.includes('remote'), 'inject 缺 remote（网关的客户端半边）')
+  // 原始载体：`connection.rpc.call('/api', 'memoryBank/<method>', { args })`。
+  // 这条比 `remote` 更弱 —— `remote` 自己也是构建期产物的一部分。
+  assert.ok(mod.inject.includes('connection'), 'inject 缺 connection（RPC 原始载体）')
 
   // **这是回归，不是洁癖。** `remote.memoryBank` 是点号服务键，宿主把面板服务
   // 注册好之前它不存在 —— 写进 `inject` 就是硬依赖，整个客户端条目会停在
   // `pending (waiting for service: remote.memoryBank)`，**三块界面一个都不挂载**。
   // 实测过一次：dsh web 首屏直接显示 `web boot: 1 entry did not activate`。
+  //
+  // 而且它**永远**不会存在：第三方包没有 `typert.remote-client.js` 那一环。
   assert.equal(
     mod.inject.includes(`remote.${NAMESPACE}`),
     false,
-    `inject 不许写 remote.${NAMESPACE} —— 那是硬依赖，会拖死整片 UI。` +
-      '命名空间在调用时由 memoryBankFacade 惰性解析。',
+    `inject 不许写 remote.${NAMESPACE} —— 硬依赖会拖死整片 UI，而且第三方包拿不到。`,
   )
+  assert.equal(mod.inject.includes('remote'), false, 'inject 不许写 remote（同样是构建期产物）')
 })
 
 test('client 加载：id 必须等于 package.json 的 name', () => {

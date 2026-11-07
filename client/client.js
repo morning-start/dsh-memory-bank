@@ -4064,7 +4064,8 @@ function injectStyles() {
  * ## 为什么**不写** `remote.memoryBank`
  *
  * 线上命名空间确实等于 Cordis 服务键（`dsh-typert-protocol/lib/index.js:329`），
- * 所以直觉上该写 `'remote.memoryBank'` —— **但那是一个硬依赖**。
+ * 所以直觉上该写 `'remote.memoryBank'` —— 但**第三方包拿不到那一面**，
+ * 而且写进 `inject` 是**硬依赖**。
  *
  * 实测（`dsh --profile web --port 0`，界面直接显示）：
  *
@@ -4073,21 +4074,62 @@ function injectStyles() {
  *   pending (waiting for service: remote.memoryBank)
  * ```
  *
- * 那个点号服务键在**宿主把面板服务注册好之前不存在**，于是整个客户端条目停在
- * pending，**三块界面一个都不挂载** —— 包括那张本来只需要 `slots` 的卡片。
- * 一个「数据面可能还没好」的可选依赖，把整片 UI 拖成了空白。
+ * 三块界面一个都不挂载 —— 包括那张本来只需要 `slots` 的卡片。
  *
- * 所以依赖降级成 `remote`（网关的客户端半边，随 web-app 必然存在），
- * `memoryBank` 这个命名空间在**调用时**才解析（见 `memoryBankFacade`）。
+ * ## 为什么改走 `connection.rpc.call`
+ *
+ * `ctx.remote.<ns>` 的 spec 是**构建期**产物：`dsh-api-remotes/lib/client.js`
+ * 里把每个**随 dsh 发布**的包的 `typert.remote-client.js` 内联成二十几段
+ * `//#region`。零构建的第三方插件没有那一环，`./remote` 导出没有任何东西会在
+ * 浏览器里加载 —— 所以 `ctx.remote.memoryBank` **永远不存在**。
+ *
+ * 但**原始载体**是通的：`POST /api/memoryBank/<method>`，body 是
+ * `{ type:'client-request', rpcId, method, payload:{ args } }`，
+ * 回 `{ ok:true, value } | { ok:false, error }`。已实测三个端点全部 `ok:true`
+ * 并带回真实数据。
+ *
+ * `connection` 是网关的客户端半边（`dsh-client-connection`），随任何 Web 宿主
+ * 必然存在；`memoryBank` 这个命名空间在**调用时**才拼（见 `memoryBankFacade`）。
  */
-const inject = ['slots', 'locale', 'remote']
+const inject = ['slots', 'locale', 'connection']
 
 /**
- * 把 `remote.memoryBank` 包成**惰性门面**。
+ * 方法的**具名参数表** —— 位置参数 → 线上字段名。
  *
- * 为什么不在 `inject` 里写死、也不在 `apply` 里直接取：拿不到时不该白屏，
- * 也不该静默 —— 每个方法返回一个**带原因**的 rejection，界面显示
- * 「数据不可用」并说明为什么，而不是一个空面板。
+ * 网关要求 `payload.args` 是**一个普通对象**（`assertExactArguments` 会按名字
+ * 逐字段校验），不是数组。实测：传 `{ args: [] }` 会被
+ * `Remote payload must contain exactly one plain-object args field` 拒掉。
+ *
+ * 客户端拿不到 `shared/endpoints.js`（自包含脚本不能 `import`），所以这里必有
+ * 一份副本 —— 防漂移靠 `test/client.test.mjs` 的「与 shared 的防漂移」断言：
+ * 方法集合与参数名逐条比对，少一条就红。
+ */
+const ARG_NAMES = Object.freeze({
+  overview: [],
+  pending: ['limit'],
+  memories: ['query', 'limit'],
+  drift: [],
+  claims: [],
+  ledger: ['limit'],
+  config: [],
+  projectConfig: [],
+  accept: ['id'],
+  reject: ['id', 'reason'],
+  edit: ['id', 'patch'],
+  retire: ['id', 'reason'],
+  forget: ['id', 'confirm'],
+  dream: [],
+  promote: ['options'],
+  setProjectConfig: ['patch'],
+  resetProjectConfig: [],
+})
+
+/**
+ * 把 `memoryBank/*` 包成**惰性门面**。
+ *
+ * 视图按 `remote.memoryBank.overview()` 这样调用，门面负责拼 RPC。
+ * 拿不到 `connection.rpc` 时不该白屏，也不该静默 —— 每个方法返回一个
+ * **带原因**的 rejection，界面显示「数据不可用」并说明为什么。
  *
  * 这不是防御性编程，是这一版的核心判断（`docs/07` §2.9 ⑥）：
  * **可选能力不许拖死本体。**
@@ -4095,33 +4137,42 @@ const inject = ['slots', 'locale', 'remote']
  * @param {any} ctx 浏览器插件上下文
  */
 function memoryBankFacade(ctx) {
-  const face = () => {
-    const namespace = ctx?.remote?.memoryBank
-    if (!namespace) {
-      throw new Error(
-        '记忆面板数据不可用：宿主没有暴露 memoryBank RPC 面 —— ' +
-          '通常是面板服务没有挂载（宿主启动日志里会有一条「面板服务未挂载：…」）。',
+  const call = (method, positional) => {
+    const names = ARG_NAMES[method]
+    if (names === undefined) {
+      return Promise.reject(new Error(`memoryBank: 未知 RPC 方法「${method}」（协议漂移？）`))
+    }
+    const carrier = ctx?.connection?.rpc
+    if (typeof carrier?.call !== 'function') {
+      return Promise.reject(
+        new Error('记忆面板数据不可用：宿主没有提供 connection.rpc —— 这不是一个 Web 宿主。'),
       )
     }
-    return namespace
+
+    // 只带**真的传了**的参数：`reject(id)` 不带 reason 时不能塞 `reason: undefined`，
+    // 网关按名字做精确匹配，多余的 undefined 字段会被判成「参数不符」。
+    const args = {}
+    for (let index = 0; index < names.length; index += 1) {
+      if (positional[index] !== undefined) args[names[index]] = positional[index]
+    }
+
+    // **原样返回 RPC 信封**（`{ ok, value } | { ok:false, error }`），不在这里拆。
+    //
+    // 视图侧的 `unwrap` / `unwrapMutation` 已经处理了双层信封：外层是传输结果，
+    // 内层是 `MutationResult`（`{ ok:true, value, text } | { ok:false, error }`）。
+    // 在这里先拆一层，视图就只能看到一层 —— 那会让「硬门拒绝」被当成「成功」。
+    return Promise.resolve(carrier.call('/api', `memoryBank/${method}`, { args })).catch((cause) => {
+      // 传输层失败是**抛**出来的（HTTP、rpcId 不匹配），要包成信封形状，
+      // 否则视图里那个 `await` 会直接炸掉整个 tab，而不是渲染一条错误。
+      throw new Error(`memoryBank/${method} 传输失败：${cause?.message ?? cause}`)
+    })
   }
 
   return new Proxy(
     {},
     {
       get(_target, method) {
-        return (...args) => {
-          try {
-            const namespace = face()
-            const call = namespace[method]
-            if (typeof call !== 'function') {
-              throw new Error(`memoryBank.${String(method)} 不是一个 RPC 方法（协议漂移？）`)
-            }
-            return Promise.resolve(call.apply(namespace, args))
-          } catch (error) {
-            return Promise.reject(error)
-          }
-        }
+        return (...args) => call(String(method), args)
       },
     },
   )
