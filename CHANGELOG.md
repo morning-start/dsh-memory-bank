@@ -6,6 +6,119 @@
 
 ---
 
+## [0.4.0] - 2026-11-07
+
+> 这一版**不加功能、只收债**：把「同一个问题有两份答案」从 8 处清到 0 处，
+> 并把它变成一条 CI 硬门。其中一处是**真实的数据丢失**。
+
+### 架构 · 裁决域（`lib/adjudicate.js`）
+
+**现象**：同一条待决提案、同一个「接受」动作，经**工具面**（`memory_resolve`）与
+**命令 / 面板面**（`/memory accept`、设置 → 记忆）落盘的东西不一样。
+
+**实测**（`.tmp-audit/probe-adjudication-drift.mjs`、`probe-merge-drift.mjs`，修前）：
+
+```
+=== 结论 ===
+❌ **落盘不同** —— 同一个用户动作，两条代码路径
+  行 8:
+    面板: authority: null
+    工具: authority: "user-confirmed"
+
+=== 结论 ===
+❌ **状态不同** —— 同一条 merge 提案，两个入口两种结果
+  面板： {"active":["pool_cap_a","pool_cap_b"],"deprecated":[],"pending":"gone","files":2}
+  工具： {"active":[],"deprecated":["pool_cap_a","pool_cap_b"],"pending":"gone","files":3}
+  ⚠ 面板接受 = 提案被**删除**，但合并从未发生（没有新条目，没有 supersedes 边）
+```
+
+**三处分叉，一处是数据丢失**：
+
+| 分叉 | 命令 / 面板面 | 工具面 | 后果 |
+|---|---|---|---|
+| `authority` | `null` | `user-confirmed` | `authority` 进 `contentHash` → 同一个动作两个回执哈希；`promote` 按权威过滤，「哪些记忆值得推广」取决于你点的哪个按钮 |
+| `confidence` | 原样（可能 `null`） | 缺席时算一个标签 | 同上，且 `lifecycle` / `weakest` 排序不同 |
+| **图提案（merge / edge）** | 删掉提案，**合并从未发生**，还回「已接受 merge 提议：`undefined`」 | 真的合并 | **提案被静默丢弃** —— 用户点了接受，系统报成功，什么都没做 |
+| 对账补丁（`claims`） | 不识别（`invalid-patch`） | 支持 | 面板上关不掉一条断言 |
+
+**根因不是「漏了一个字段」**，是**裁决这件事被实现了两遍**。0.2.0 把命令面的裁决
+搬进 `lib/host/mutations.js` 时只搬了一半 —— 工具面保留了完整的一份。两份各自都有
+测试，于是分叉永远不会变红。
+
+**修法**：裁决是**领域能力**，不是面板的能力。
+
+- 新增 `lib/adjudicate.js` —— 裁决域**唯一实现**（`accept` / `reject` / `edit` /
+  `retire` / `forget` / `reseed` / `dream` / `promote` / 图提案 / 项目层配置）。
+  条目落盘的收尾（证据 / 置信 / 权威 / 风险）提成 `writeAdjudicated()`，
+  **`user-confirmed` 现在只有一个产生点**。
+- `lib/host/mutations.js` —— 只剩一行 re-export。裁决逻辑不再住在 `host/` 下：
+  `host/` 的语义是「面板 RPC 面」，而工具面不是面板。
+- `lib/tools.js` —— `memory_resolve` 变成**薄适配器**：筛白名单 → 调裁决域 →
+  把 `MutationResult` 翻译成工具面的契约（失败**抛** `MemoryError`，
+  宿主 registry 靠异常判断 `isError`）。
+- 图提案：`resolveGraphProposal` 从 `tools.js` 搬进裁决域，**两个入口都真的合并**。
+- `edit.claims` 现在两个入口都支持（`claimPatches` 走 `applyResolutions` 合并语义，
+  不是内容字段覆盖）。
+- 回归：`test/adjudication.test.mjs` **16 条**，核心那条断言的是
+  **「同一条提案经两个入口，落盘文件逐字节相同」** —— 不是「字段相等」，
+  因为 `contentHash` 读的是序列化全文，字节相同才是真的相同。
+
+### 架构 · 共享内核（`lib/kernel/`）
+
+同一类债的其余 8 处。判据统一：**一个概念一份实现，两份语义不同就重命名消歧**。
+
+| 文件 | 收敛的重复品 | 修法 |
+|---|---|---|
+| `lib/kernel/quota.js` | `readQuotaState`（`tools.js` 私有版 + `host/queries.js` 自称「镜像」的复制品） | 抽成单一事实源；`host/queries.js` 保留 re-export |
+| `lib/kernel/number.js` | `clampInt`（严格版 `typeof number` / 强转版 `Number()`） | 统一到强转版 —— 见下 |
+| `lib/kernel/text.js` | `escapeRegex`（`anchor.js` + `drift.js`，逐字节相同） | 抽成单一事实源 |
+| `lib/kernel/time.js` | `daysSince`（`lifecycle.js` + `promote.js`，逐字节相同） | 抽成单一事实源 |
+| `lib/embedding.js` | `tokenize` 与 `lib/util.js` **同名不同算法** | 重命名 `tokenizeSemantic`（词 + CJK 二字组） |
+| `lib/guard.js` | `stripQuoted` 与 `lib/lifecycle.js` **同名不同语义** | 重命名 `stripShellQuoted`（shell 状态机，处理 `\` 转义） |
+| `lib/lifecycle.js` | 同上 | 重命名 `stripQuotedProse`（正则替换，散文） |
+| `lib/anchor.js` | 私有 `sha256` 复制 `util.js` | 改 import |
+
+**`clampInt` 为什么统一到强转版**：这个函数的全部调用方做的都是**配置 / 参数
+归一化**，而 `config.json`、环境变量、argv 里的数字**除了 JSON 数字字面量之外
+都是字符串**。拒绝 `"5"` 不会更安全，只会让每一种写法**静默退化成 fallback** ——
+用户以为设了 5，实际拿到默认值 10，没有任何地方告诉他。
+
+### 架构 · 把「双实现漂移」变成 CI 硬门（`scripts/check.mjs` 第四相）
+
+这个仓库的历史文档（`docs/08-代码审核.md`）把「双实现漂移」列为**最贵的一类
+bug**，而它的恶劣性质是：**两份实现各自都有测试，所以永远不会变红。**
+
+所以新增第四相硬门：**同一个顶层函数名不得出现在两个 `lib/` 模块里。**
+
+- 只认顶层声明（`function name(` / `const name = (`）。缩进的内部辅助函数不算 ——
+  两个模块各有一个 `render()` 是正常的。
+- 误报走 `DUPLICATE_NAME_ALLOWLIST`，**每条必须写理由**。
+- **验证过它会红**（临时建 `lib/__probe_dupe.js` 定义 `daysSince` + `clampInt`，
+  两道都被点名，退出码 1）。
+
+> 一个不会红的门比没有门更糟 —— 它宣称自己检查过。
+
+### 实测
+
+```
+npm test                    568 条（+16，新增 test/adjudication.test.mjs）· 0 fail · 0 skip
+scripts/check.mjs           78 文件语法 / 2 目录路由 / 死导出 0 / 跨模块重名 0
+bench/acceptance.mjs        7/7 · 38 个模块零网络
+scripts/doctor.mjs          自检通过
+循环依赖                    (none)
+```
+
+### 迁移
+
+**不需要。** 落盘格式、配置项、工具 schema、RPC 端点都没变 ——
+本版改的是「谁实现它」。已有记忆与其回执不受影响。
+
+唯一的行为变化是**修复方向**的：面板 / 命令面接受一条 merge 提案现在**真的合并**
+（以前是删掉提案、什么都不做）。如果某个仓库里还留着这种「接受过但没合并」的提案 ——
+不可能，它们已经被删了。重新 `memory_audit { dream: true }` 生成即可。
+
+---
+
 ## [0.3.7] - 2026-11-07
 
 > 这一版只改一件用户能看见的事：**面板不再「莫名其妙是 0」。**

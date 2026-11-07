@@ -233,3 +233,121 @@ if (deadExports.length > 0) {
 } else {
   console.log('✓ 死导出：全部导出都有消费者或定义文件内部使用')
 }
+
+/* ── 第四相：跨模块重名 —— 「双实现漂移」的机械判据 ────────────────
+ *
+ * 这是这个仓库**最贵**的一类 bug，而且它有一个恶劣的性质：**两份实现各自
+ * 都有测试，所以永远不会变红**。
+ *
+ * 实证（0.3.x 修掉之前，全部在本仓库里）：
+ *
+ * | 重名 | 两份的差别 | 后果 |
+ * |---|---|---|
+ * | `readQuotaState` | `tools.js` 私有版 / `host/queries.js`「镜像」版 | 面板与 `/memory status` 可以报出两个配额 |
+ * | `clampInt` | 严格版（只收 number）/ 强转版（`Number()`） | 同一个旋钮在工具面和面板面语义不同 |
+ * | `tokenize` | 词 + CJK 单字 / 词 + CJK 二字组 | 检索通道与语义通道对同一段文本切出不同词项 |
+ * | `stripQuoted` | shell 状态机（处理 `\`）/ 正则替换（散文） | 同名不同义，读代码的人会以为它们是同一个函数 |
+ * | `pickEditable` | 8 项（含 `claims`）/ 7 项（不含） | 「哪些字段可编辑」取决于你从哪个入口点进来 |
+ *
+ * 判据：**同一个顶层函数名 / 顶层 const 名不得出现在两个 `lib/` 模块里。**
+ *
+ * ## 为什么这是一条硬门而不是维护条款
+ *
+ * 条款会被跳过 —— 而这个坑的特点是**跳过的时候全绿**。写代码的人复制一份
+ * 出来改，测试仍然过，界面继续给错答案。只有 CI 红着，复制这个动作才会
+ * 在 review 里被看见。
+ *
+ * ## 误报怎么办
+ *
+ * `DUPLICATE_NAME_ALLOWLIST` 里**必须写明理由**。加一条之前先问：
+ * 这两个函数真的需要同名吗？重命名（`tokenizeSemantic` / `stripShellQuoted`）
+ * 几乎总是更好的答案 —— 同名不同义本身就是债。
+ *
+ * **同类但不同名不算**：`renderRecall` 与 `renderProposal` 都在渲染，
+ * 但名字已经说明了区别。本门只挡「同名」。
+ */
+
+/**
+ * 允许「两个模块各有一个同名顶层函数」的位置。
+ *
+ * 键是 `名字`，值是**为什么必须同名**。没有值的条目会在下一次检查时
+ * 变成红色 —— 这个名单存在的意义就是让「为什么它还在」有地方写。
+ *
+ * @type {Map<string, string>}
+ */
+const DUPLICATE_NAME_ALLOWLIST = new Map([])
+
+/**
+ * 收集 `lib/` 下每个模块的**顶层**声明名。
+ *
+ * 只认顶层：`  function x()`（缩进）是内部实现，重名不构成双实现 ——
+ * 两个模块各有一个 `render()` 内部辅助是正常的。判据是「导出的 / 顶层的
+ * 那一份」，因为它才是被别处 import 的那一份。
+ */
+function duplicateNamePhase(repoRoot) {
+  const libDir = join(repoRoot, 'lib')
+  let entries
+  try {
+    entries = readdirSync(libDir, { recursive: true })
+  } catch {
+    return []
+  }
+
+  /** @type {Map<string, string[]>} 名字 -> 定义它的文件 */
+  const owners = new Map()
+
+  for (const entry of entries) {
+    const relative = String(entry).split(sep).join('/')
+    if (!/\.(js|mjs)$/.test(relative)) continue
+    const path = `lib/${relative}`
+    let text
+    try {
+      if (!statSync(join(repoRoot, ...path.split('/'))).isFile()) continue
+      text = readFileSync(join(repoRoot, ...path.split('/')), 'utf8')
+    } catch {
+      continue
+    }
+
+    const names = new Set()
+    // 顶层函数：`function name(` / `export function name(` / `async function name(`
+    for (const match of text.matchAll(/^(?:export\s+)?(?:async\s+)?function\*?\s+([A-Za-z_$][\w$]*)\s*\(/gm)) {
+      names.add(match[1])
+    }
+    // 顶层 const / let 箭头函数：`const name = (` / `const name = async (`
+    for (const match of text.matchAll(/^(?:export\s+)?(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?\(/gm)) {
+      names.add(match[1])
+    }
+
+    for (const name of names) {
+      if (!owners.has(name)) owners.set(name, [])
+      const list = owners.get(name)
+      if (!list.includes(path)) list.push(path)
+    }
+  }
+
+  const duplicates = []
+  for (const [name, files] of [...owners].sort()) {
+    if (files.length < 2) continue
+    if (DUPLICATE_NAME_ALLOWLIST.has(name)) continue
+    duplicates.push({ name, files: files.sort() })
+  }
+  return duplicates
+}
+
+const duplicateNames = duplicateNamePhase(process.cwd())
+for (const item of duplicateNames) {
+  console.error(`✗ 跨模块重名：${item.name}  →  ${item.files.join('  +  ')}`)
+}
+if (duplicateNames.length > 0) {
+  console.error(
+    `\n${duplicateNames.length} 个顶层函数名出现在多个 lib 模块里。` +
+      '这是本仓库最贵的一类 bug（双实现漂移：两份各有测试，永远不变红）。\n' +
+      '修法（按优先级）：\n' +
+      '  1. **重命名消歧** —— `tokenize` → `tokenizeSemantic` / `stripQuoted` → `stripShellQuoted`；\n' +
+      '  2. **抽到单一事实源** —— 搬到 `lib/kernel/` 或 `lib/adjudicate.js`，两边 import；\n' +
+      '  3. 确实必须同名 → 在 `DUPLICATE_NAME_ALLOWLIST` 里写明理由。',
+  )
+  process.exitCode = 1
+} else {
+  console.log('✓ 跨模块重名：每个顶层函数名只有一个实现')
+}

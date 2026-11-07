@@ -138,16 +138,16 @@ Agent 调 `memory_remember`，十道门跑完：
 
 | | |
 |---|---|
-| 版本 | **0.3.6**（`actionRiskOf` 中英同判：`deployment` 不再漏判，`tokenize` 不误伤） |
-| 测试 | **552 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 15 条接线测试） |
+| 版本 | **0.4.0**（裁决域单一实现：面板接受 merge 提案不再静默丢失；8 处双实现收敛到 `lib/kernel/`） |
+| 测试 | **568 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 15 条接线测试） |
 | 验收 | 设计文档 §14 的 7 条**全部通过**（`node bench/acceptance.mjs`） |
 | 基准 | G1 真阳性 **5/10** · 假阳性 **0/5** · 完整协议 **10/15** · 精度 **66.7%**；语义分离 **−0.139**（不可分离，见 `bench/embedding-experiment.mjs`） |
-| 规模 | **33** 个服务端模块 + 浏览器端 `client/` · 约 420 KB |
+| 规模 | **37** 个服务端模块 + 浏览器端 `client/` · 约 420 KB |
 | 依赖 | 仅 `@deepseek-ai/schemastery`（peer）；浏览器端零依赖（React 由平台种子表提供） |
 
 ```bash
-npm test                      # 495 条单测（需先链接 peer，见 docs/07 §5）
-npm run doctor                # 自检：装好了吗（10 项，只读，退出码 0/1）
+npm test                      # 568 条单测（需先链接 peer，见 docs/07 §5）
+npm run doctor                # 自检：装好了吗（只读，退出码 0/1）
 node bench/acceptance.mjs     # 验收 7 条
 node bench/g1-eval.mjs        # G1 拿本仓库自己的文档实测
 node bench/assembly.mjs       # 装配路径基准

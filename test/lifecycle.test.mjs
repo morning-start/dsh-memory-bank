@@ -25,7 +25,7 @@ import {
   referenceTimestamp,
   reviewDue,
   reviewHints,
-  stripQuoted,
+  stripQuotedProse,
   suggestsDeprecation,
   weakestAuthority,
   weakestConfidence,
@@ -140,11 +140,13 @@ describe('陈旧提示', () => {
   it('引号/反引号内不算断言', () => {
     const quoted = entry({ body: 'the phrase "expires 2026-06-29" appears in the config', lastVerifiedAt: daysAgo(30) })
     assert.ok(!reviewHints(quoted, NOW).some((hint) => hint.label === 'expires'))
-    assert.equal(stripQuoted('a "b" c').replace(/\s+/g, ' ').trim(), 'a c')
+    // `stripQuotedProse`（不是 `stripQuoted`）：`guard.js` 的 `stripShellQuoted`
+    // 做的是同一类动作，但定界符集合 / `\` 转义 / 长度保证全不同 —— 名字必须分开。
+    assert.equal(stripQuotedProse('a "b" c').replace(/\s+/g, ' ').trim(), 'a c')
   })
 
   it('裸单引号不是定界符（更常是所有格）', () => {
-    assert.equal(stripQuoted("Boomtastic's note"), "Boomtastic's note")
+    assert.equal(stripQuotedProse("Boomtastic's note"), "Boomtastic's note")
   })
 
   it('时间无关类型不因为「旧」而点火', () => {

@@ -20,7 +20,7 @@ import {
   inspectToolCall,
   memoryTokens,
   shellWritesMemory,
-  stripQuoted,
+  stripShellQuoted,
 } from '../lib/guard.js'
 import { CASE_INSENSITIVE_FS, canonicalPath, normalizeRef } from '../lib/util.js'
 
@@ -102,16 +102,19 @@ describe('extractWritePaths', () => {
 
 /* ── shell ──────────────────────────────────────────────────────── */
 
-describe('stripQuoted', () => {
+// `stripShellQuoted`（不是 `stripQuoted`）：这个名字是**消歧**。
+// `lifecycle.js` 的 `stripQuotedProse` 做的是同一类动作，但定界符集合、
+// `\` 转义规则、长度保证全不同 —— 同名不同义的两份实现是漂移的温床。
+describe('stripShellQuoted', () => {
   it('引号内容变空格，长度不变（写指示符判定不被字符串字面量骗到）', () => {
     const command = 'echo "a > b"'
-    const stripped = stripQuoted(command)
+    const stripped = stripShellQuoted(command)
     assert.equal(stripped.length, command.length)
     assert.doesNotMatch(stripped, />/, '引号里的 `>` 不该被当成重定向')
   })
 
   it('转义也吃掉', () => {
-    assert.doesNotMatch(stripQuoted('echo \\>'), />/)
+    assert.doesNotMatch(stripShellQuoted('echo \\>'), />/)
   })
 })
 
