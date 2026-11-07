@@ -71,7 +71,16 @@ function createFakeReact() {
     useState(initial) {
       return [typeof initial === 'function' ? initial() : initial, () => {}]
     },
-    useEffect() {},
+    /**
+     * 挂载即跑一次（React 首次渲染的语义）。清理函数**不**在这里执行 ——
+     * 测试关心的是「挂载时做了什么」，卸载路径由 `apply` 的 effect 单独覆盖。
+     *
+     * 这个 stub 必须真的执行回调：`MemoryView` 的「切到这一栏时重读」
+     * 就挂在 effect 上，空实现会让那条回归**永远绿**。
+     */
+    useEffect(callback) {
+      callback()
+    },
     useRef(value) {
       return { current: value }
     },
@@ -1021,6 +1030,33 @@ test('渲染：项目配置抽屉只列仓库属性，并指向配置页', async
   // 夹具里没有 projectScoped 字段 → 全部继承 → 列出其余分组。
   assert.ok(text.includes('其余'), '继承提示不在')
   assert.ok(config !== undefined)
+})
+
+test('渲染：切到这一栏时重新读一次快照（不吃插件挂载时那份缓存）', async () => {
+  // 0.4.1 的实际 bug：面板路径显示成 `C:\Users\<user>\.dsh\profiles\desktop`，
+  // 必须**手动刷新页面**才变成真仓库。
+  //
+  // 根因不是「路径算错」，是**什么时候算**：插件的客户端半边在页面加载时就装了，
+  // 那时还没有任何会话 —— 宿主 `resolveRoot()` 拿不到 live Agent，只能回退到
+  // 进程 cwd（profile 目录）。而 `memory.load()` 只在 `apply` 里跑一次，
+  // 于是面板把「页面加载那一刻的根」缓存到了用户点开这一栏。
+  //
+  // 修法：`MemoryView` 挂载时重读。这条断言锁的就是「重读发生了」——
+  // 去掉那个 `useEffect` 它就会红。
+  const { registrations, t, calls } = await mount()
+
+  const before = calls.length
+  assert.ok(before > 0, '`apply` 里应该已经发起过一轮读取')
+
+  const view = registrationOf(registrations, 'conversation.view')
+  view.component({ t, ...view.options.inject() })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.ok(
+    calls.length > before,
+    '切到「记忆」这一栏时必须重新读一次快照：宿主解析仓库根依赖本会话跑过钩子，' +
+      '插件挂载时（页面加载）还没有会话，那一次读到的是 profile 目录',
+  )
 })
 
 test('渲染：翻译函数缺键时回退成键名而不是崩', async () => {

@@ -276,6 +276,24 @@ function MemoryView(props) {
   const memory = props.memory
   const state = React.useSyncExternalStore(memory.subscribe, memory.getSnapshot)
 
+  /**
+   * **切到这一栏（挂载）时重新读一次。**
+   *
+   * 为什么不能只靠 `apply` 里那一轮：插件的客户端半边在**页面加载**时就装了，
+   * 那时还没有任何会话 —— 宿主 `resolveRoot()` 拿不到 live Agent，只能回退到
+   * 进程 cwd（profile 目录）。于是面板显示的是 profile 里的 0 条记忆，而路径
+   * 看起来**像一条正常的绝对路径**，不手动刷新根本看不出问题。
+   *
+   * 等用户真的点开这一栏时，本轮会话早就跑过 `system-prompt.context` 钩子，
+   * 宿主那份 memo 已经是真仓库了 —— 重新读一次就对上。
+   *
+   * `load()` 不写 `status: 'loading'`，所以重读不会闪一下空白：旧数据一直
+   * 留在屏幕上，直到新数据到达。
+   */
+  React.useEffect(() => {
+    void memory.load()
+  }, [memory])
+
   return h(
     'div',
     { className: 'mb-panel mb-panel--view' },

@@ -6,6 +6,90 @@
 
 ---
 
+## [0.4.2] - 2026-11-08
+
+> 这一版修两件（其实是同一件）事：**面板读的是哪个仓库，以及它能不能说出口。**
+
+### Fixed · 「记忆」面板必须手动刷新才显示正确路径
+
+**现象**：刚打开页面时面板顶部显示
+
+```
+C:\Users\<user>\.dsh\profiles\desktop
+```
+
+—— 一个**看起来完全正常的绝对路径**，但它不是仓库。手动刷新页面之后才变成
+`E:\Workplace\extension\dsh-memory-bank`。
+
+**根因不是「路径算错」，是「什么时候算」**：
+
+1. 插件的客户端半边在**页面加载**时装上，`apply` 里就调了 `memory.load()`；
+2. 那一刻还没有任何会话 —— 宿主 `resolveRoot()` 拿不到 live Agent；
+3. 于是走 `lib/root.js` 的 `fallback()`，回退到**进程 cwd**（profile 目录）；
+4. 面板把这一轮的快照缓存住了。用户点开「记忆」栏时看到的是**页面加载那一
+   刻的根**，而不是当前会话的仓库。
+
+刷新能好，是因为刷新之后本轮会话早就跑过 `system-prompt.context` 钩子，
+宿主那份 `memo` 已经是真仓库了。
+
+**修法**（`client/views/memory.js`）：`MemoryView` **挂载时重读一次**。
+
+`conversation.view` 的 scope 是 `session`，切栏 = 挂载 = 一次真实的
+「用户在问这个仓库」。`load()` 不写 `status: 'loading'`，所以重读不会闪
+空白 —— 旧数据一直留在屏幕上，直到新数据到达。
+
+**回归**：`test/client.test.mjs` 的「切到这一栏时重新读一次快照」。
+做过变异测试：去掉那个 `useEffect` 后**只有它一条**变红（32 过 / 1 挂）。
+
+### Fixed · 回退警告条**一次都没出现过**
+
+0.3.7 加了「根从哪来」的透出：`fallback` 时面板挂红色警告条，因为
+「0 条记忆」到底是「这个仓库没有记忆」还是「读错了地方」必须能分辨。
+
+**但它从来没生效过。**
+
+`lib/root.js` 的 `source` getter 读的是 `memo?.source`，而 `fallback()` 分支
+**刻意不写 memo**（「一次 cwd 回退不该被当成『这个仓库就是它』」—— 这个判断
+是对的）。两个判断合起来的后果是：`source` 在回退时恒为 `null`，
+`rootSource === 'fallback'` 恒假，警告条恒不显示。
+
+于是上面那个 bug **连提示都没有** —— 面板安安静静显示着 profile 目录里的
+0 条记忆。
+
+**修法**：拆成两个变量，各管一件事。
+
+| 变量 | 管什么 | 回退时 |
+|---|---|---|
+| `memo` | 最近一次**可信**的会话目录 | 不写（它不可信） |
+| `lastSource` | 最近一次 `resolve()` 的**实际来源** | 写 `'fallback'` |
+
+**回归**：`test/root.test.mjs` 的「cwd 回退不会被记成『这个仓库就是它』，
+但来源必须说出来」—— 改掉了原来断言 `source === null` 的那条（它把
+「可信度」和「这次是哪种来源」混成了一件事，正是这个 bug 的化石）。
+
+### 实测
+
+```
+npm test                    570 条（+1）· 0 fail · 0 skip
+scripts/check.mjs           78 文件语法 / 2 目录路由 / 死导出 0 / 跨模块重名 0
+bench/acceptance.mjs        7/7 · 38 个模块零网络
+scripts/doctor.mjs          自检通过
+build-client --check        118193 字节一致
+变异测试                    去掉 useEffect → 只有目标回归红（32/1）
+```
+
+### 迁移
+
+**不需要。** 要刷新页面才能看到修复（`client/client.js` 是签入产物）。
+
+### 这个仓库本身仍然显示 0 —— 那不是 bug
+
+`E:\Workplace\extension\dsh-memory-bank` 没有 `.dsh-memory/`：这个插件自己的
+仓库一条记忆都没写过。同机对照：`my_tube` / `noval-studio` / `dsh-myteam`
+都有真实的记忆库。
+
+---
+
 ## [0.4.1] - 2026-11-08
 
 > 这一版只改一件用户能看见的事：**记忆面板从「设置 → 记忆」搬到对话区顶部的 View 标签。**

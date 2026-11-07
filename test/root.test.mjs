@@ -175,11 +175,16 @@ describe('根目录解析 · 拿不到会话时不许静默', () => {
     assert.equal(logs.filter((line) => line.includes('回退到进程 cwd')).length, 1)
   })
 
-  it('cwd 回退**不会**被记成「这个仓库就是它」', () => {
+  it('cwd 回退**不会**被记成「这个仓库就是它」，但来源必须说出来', () => {
     const resolver = createRootResolver({ env: {}, cwd: () => cwd })
     assert.equal(resolver.resolve(null), cwd)
-    assert.equal(resolver.memo, null, '一次 cwd 回退不该变成 memo')
-    assert.equal(resolver.source, null, '回退不是「解析出来的来源」')
+    assert.equal(resolver.memo, null, '一次 cwd 回退不该变成 memo —— 它不可信')
+    // **但 `source` 必须说出真相。** 0.4.1 之前这里断言的是 `null`，理由是
+    // 「回退不是解析出来的来源」—— 那个判断把「可信度」和「这次是哪种来源」
+    // 混成了一件事。后果：界面上的回退警告条**永远不会出现**，面板安安静静
+    // 显示着 profile 目录里的 0 条记忆，而路径看起来像一条正常的绝对路径。
+    // 两个变量各管一件事：`memo` 记可信的根，`lastSource` 记这一次怎么来的。
+    assert.equal(resolver.source, ROOT_SOURCES.FALLBACK, '回退必须能被界面看见')
   })
 })
 
