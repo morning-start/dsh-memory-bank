@@ -102,6 +102,7 @@ Agent 调 `memory_remember`，十道门跑完：
 /memory audit              全量审计
 /memory promote [--json]   生成推广包
 /memory retire <id>        退休一条记忆
+/memory reseed [--dry-run] 重签旧版本哈希的回执（只改回执，不碰正文）
 ```
 
 ---
@@ -137,8 +138,8 @@ Agent 调 `memory_remember`，十道门跑完：
 
 | | |
 |---|---|
-| 版本 | **0.3.3**（接上 `authority` 死字段 + 渲染可核的权威，取代不可复算的置信） |
-| 测试 | **520 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 15 条接线测试） |
+| 版本 | **0.3.4**（三条升级路径各有出口：回执重签 / 待审队列封顶 + 过期 / `stale` 降级） |
+| 测试 | **538 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 15 条接线测试） |
 | 验收 | 设计文档 §14 的 7 条**全部通过**（`node bench/acceptance.mjs`） |
 | 基准 | G1 真阳性 **4/10** · 完整协议 **9/15** · 精度 **60.0%**；语义分离 **−0.139**（不可分离，见 `bench/embedding-experiment.mjs`） |
 | 规模 | **33** 个服务端模块 + 浏览器端 `client/` · 约 420 KB |

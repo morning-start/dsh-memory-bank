@@ -314,3 +314,46 @@ describe('硬排除 · 默认配置（回归）', () => {
     assert.equal(second.excluded[0]?.reason, 'secret', '默认规则不能因为用户加了规则而消失')
   })
 })
+
+/**
+ * 权威：**推广包是唯一离开这个仓库的产物**。
+ *
+ * 它会进别的项目、被别的 Agent 召回 —— 这种产物最该关心的问题不是
+ * 「写得好不好」，是「有没有人为它负过责」。而 0.3.3 之前 `authority`
+ * 根本不产生，所以这条判断在推广包里连痕迹都没有。
+ *
+ * **是标记不是硬排除**：硬排除 `observed` 会让「一条都没被裁决过」的仓库
+ * 永远产不出包 —— 而那是正常状态（绝大多数记忆是模型观察到的，没人逐条审）。
+ * 过宽的检查会永久屏蔽合法内容，而屏蔽是静默的。
+ */
+describe('权威 · 没人签过字的进包要看得见', () => {
+  it('`observed` → 打 `unconfirmed-authority` 标记，但**仍然进包**', () => {
+    const { bundle } = buildPromotion([entry('a', { authority: 'observed' })], { root, config: {} })
+    assert.equal(bundle.entries.length, 1, '标记不是排除')
+    assert.ok(bundle.entries[0].markers.includes('unconfirmed-authority'))
+  })
+
+  it('`user-confirmed` → 不打标记（有人背过书）', () => {
+    const { bundle } = buildPromotion([entry('a', { authority: 'user-confirmed' })], { root, config: {} })
+    assert.ok(!bundle.entries[0].markers.includes('unconfirmed-authority'))
+  })
+
+  it('缺 `authority` 按 observed 算 —— 没写不等于有人背书', () => {
+    const { bundle } = buildPromotion([entry('a')], { root, config: {} })
+    assert.ok(bundle.entries[0].markers.includes('unconfirmed-authority'))
+  })
+
+  it('摘要里数得出来', () => {
+    const { bundle } = buildPromotion(
+      [entry('a', { authority: 'observed' }), entry('b', { authority: 'user-confirmed' })],
+      { root, config: {} },
+    )
+    assert.equal(bundle.summary.unconfirmedAuthority, 1)
+    assert.match(summarizePromotion(bundle), /1 条没有人确认过/)
+  })
+
+  it('渲染出的条目行带着权威', () => {
+    const { bundle } = buildPromotion([entry('a', { authority: 'user-confirmed' })], { root, config: {} })
+    assert.match(renderPromotion(bundle), /权威 user-confirmed/)
+  })
+})

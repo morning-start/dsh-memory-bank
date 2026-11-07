@@ -422,6 +422,79 @@ describe('渲染 · 权威而不是置信', () => {
     const envelope = recall('连接池上限排查', snapshot, { config: CONFIG })
     assert.equal(envelope.results[0].confidence, 'verified')
   })
+
+  /**
+   * 另外两个裸数字（指针层 `gate=0.975`、内容层页脚 `gate=0.95`）同样是
+   * **相关性**分，却渲染在满是认知字段的上下文里。模型没法独立检验它，
+   * 只能选择相信 —— 而「相信」正是要消掉的东西。
+   */
+  it('**内容层不再渲染裸数字 `gate=`**', () => {
+    assert.doesNotMatch(renderOne(), /gate=/)
+  })
+
+  it('**指针层也不再渲染裸数字 `gate=`**', () => {
+    const snapshot = snapshotOf(
+      entry('pool_cap', { title: '连接池上限排查', about: 'staging 健康检查超时' }),
+    )
+    const envelope = recall('连接池上限排查', snapshot, {
+      config: { ...CONFIG, thresholds: { ...CONFIG.thresholds, contentTier: 0.9999 } },
+    })
+    assert.equal(envelope.delivery.tier, 'pointers', JSON.stringify(envelope.delivery))
+    const rendered = renderRecall(envelope)
+    assert.doesNotMatch(rendered, /gate=/)
+    assert.match(rendered, /\.dsh-memory\/memories\/pool_cap\.md/, '路径必须还在 —— 指针层的全部价值是「打开它」')
+  })
+})
+
+/* ── 交付层级 · `stale` 只给指针 ──────────────────────────────────── */
+
+/**
+ * `docs/03` §8 轴一的承诺：`stale` → 只给 `pointers`（降级）。
+ *
+ * 0.3.4 之前它**只写在文档里** —— `recall` 把 `doc.confidence` 原样透传到
+ * 渲染，从不拿它决定交付层级。一条被明确标成陈旧的记忆照样以正文注入，
+ * 和它自己的标签矛盾。
+ *
+ * 与 0.3.1 退回的「`R4`/`R5` 只给指针」不同：`actionRisk` 是**关键词推断**
+ * （正文有「部署」就算不可逆），过宽会永久屏蔽合法记忆；`confidence: stale`
+ * 是**显式声明**。判据的性质决定它能不能当门用。
+ */
+describe('交付层级 · `stale` 只给指针', () => {
+  it('全是 `stale` → 落到指针层，正文一条都不给', () => {
+    const snapshot = snapshotOf(
+      entry('stale_pool', { title: '连接池上限排查', about: 'staging 健康检查超时', confidence: 'stale' }),
+    )
+    const envelope = recall('连接池上限排查', snapshot, { config: CONFIG })
+    assert.equal(envelope.delivery.tier, 'pointers', JSON.stringify(envelope.delivery))
+    assert.equal(envelope.results.length, 0, 'stale 不能进正文')
+    assert.deepEqual(
+      envelope.pointers.map((pointer) => pointer.memoryId),
+      ['stale_pool'],
+      '**不能静默丢弃** —— 指针层的全部意义是「给路径」',
+    )
+  })
+
+  it('新鲜 + 陈旧混排：正文只给新鲜的，陈旧的那条**以指针列出**', () => {
+    const snapshot = snapshotOf(
+      entry('fresh_pool', { title: '连接池上限排查', about: 'staging 健康检查超时' }),
+      entry('stale_pool', {
+        title: '连接池上限排查 · 旧版（已过时）',
+        about: 'staging 健康检查超时 · 旧版（已过时）',
+        confidence: 'stale',
+      }),
+    )
+    const envelope = recall('连接池上限排查', snapshot, { config: CONFIG })
+    assert.ok(envelope.results.length >= 1, '新鲜的那条必须能进正文')
+    assert.ok(
+      envelope.results.every((item) => item.confidence !== 'stale'),
+      '正文里不能有 stale',
+    )
+    assert.ok(
+      envelope.pointers.some((pointer) => pointer.memoryId === 'stale_pool'),
+      `stale 那条必须出现在指针里（不静默丢），实际 pointers=${JSON.stringify(envelope.pointers.map((p) => p.memoryId))}`,
+    )
+    assert.match(renderRecall(envelope), /只给指针（已标陈旧/)
+  })
 })
 
 /* ── 排序常量 ─────────────────────────────────────────────────────── */

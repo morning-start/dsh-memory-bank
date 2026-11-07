@@ -31,7 +31,18 @@ import { MUTATIONS, METHODS, NAMESPACE, QUERIES } from '../shared/endpoints.js'
 import { AsyncMutationError, ConfirmRequiredError, StaleRevisionError, WriteLockedError, createGuards } from '../lib/host/guards.js'
 import { createMutations } from '../lib/host/mutations.js'
 import { createQueries, readQuotaState } from '../lib/host/queries.js'
-import { ensureLayout, layout, readAll, readProposals, writeEntry, writeInbox, writeProposal } from '../lib/store.js'
+import {
+  appendReceipt,
+  ensureLayout,
+  layout,
+  readAll,
+  readProposals,
+  readReceipts,
+  receiptStatus,
+  writeEntry,
+  writeInbox,
+  writeProposal,
+} from '../lib/store.js'
 import { createToolDefinitions } from '../lib/tools.js'
 
 /* ── 可选 peer 依赖 ───────────────────────────────────────────────── */
@@ -426,6 +437,59 @@ describe('mutations · 裁决', () => {
     assert.equal(result.ok, true, result.error)
     assert.equal(result.value.staged, 0, '一条孤立记忆不该凭空产生边')
     assert.equal(readAll(root).entries.length, before)
+  })
+
+  /**
+   * **`needs-reseed` 必须有出口。**
+   *
+   * 哈希字段集每变一次（0.1.1 的 `actionRisk`、0.3.3 的 `authority`），
+   * 全部既有回执都会对不上。`receiptStatus` 把它们报成 `needs-reseed`
+   * 而不是 `tampered` —— 但**光诚实不够**：没有修复路径，那条警告永不消失，
+   * 而永久存在的警告会被学会忽略。
+   */
+  it('reseed 把旧哈希版本的回执重签成当前版本（只改回执）', async () => {
+    const entry = writeEntry(root, candidate())
+    appendReceipt(root, entry)
+
+    // 手工降级，模拟 0.3.2 及以前写下的回执
+    const path = layout(root).receipts
+    const store = readReceipts(root)
+    store.receipts[0].hashVersion = 1
+    writeFileSync(path, JSON.stringify(store), 'utf8')
+    assert.equal(receiptStatus(root, entry), 'needs-reseed')
+
+    const dry = await mutations.reseed(root, { dryRun: true })
+    assert.equal(dry.ok, true, dry.error)
+    assert.deepEqual(dry.value.candidates, [entry.id])
+    assert.equal(receiptStatus(root, entry), 'needs-reseed', '干跑不能写盘')
+
+    const real = await mutations.reseed(root)
+    assert.equal(real.ok, true, real.error)
+    assert.deepEqual(real.value.resealed, [entry.id])
+    assert.equal(receiptStatus(root, entry), 'ok')
+
+    // 重签必须**留痕** —— 一次不可追溯的重签和一次篡改没有区别
+    const [receipt] = readReceipts(root).receipts
+    assert.equal(receipt.resealedFrom, 1)
+    assert.ok(receipt.resealedAt)
+
+    // 幂等：再跑一次什么都不做
+    const again = await mutations.reseed(root)
+    assert.deepEqual(again.value.resealed, [])
+  })
+
+  it('reseed **不改记忆正文**', async () => {
+    const entry = writeEntry(root, candidate())
+    appendReceipt(root, entry)
+    const path = layout(root).receipts
+    const store = readReceipts(root)
+    store.receipts[0].hashVersion = 1
+    writeFileSync(path, JSON.stringify(store), 'utf8')
+
+    const before = readFileSync(join(layout(root).memories, `${entry.id}.md`), 'utf8')
+    await mutations.reseed(root)
+    const after = readFileSync(join(layout(root).memories, `${entry.id}.md`), 'utf8')
+    assert.equal(after, before, '重签的是「哈希怎么算」，不是「正文写了什么」')
   })
 
   it('promote 只产出包，不写全局存储', async () => {
