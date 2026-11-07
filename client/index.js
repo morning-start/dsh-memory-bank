@@ -52,12 +52,71 @@ function injectStyles() {
 /**
  * 需要的服务（cordis fiber inject）。
  *
- * `remote.memoryBank` 是**点号服务键**，不是 `remote` 上的属性名猜出来的：
- * 线上命名空间 = Cordis 服务键（`dsh-typert-protocol/lib/index.js:329`），
- * 所以 `super(ctx, 'memoryBank')` → `ctx.remote.memoryBank.*`。
- * 少写这一条，`apply` 会在 Host 半边没加载时照常跑，然后每个 RPC 都抛。
+ * ## 为什么**不写** `remote.memoryBank`
+ *
+ * 线上命名空间确实等于 Cordis 服务键（`dsh-typert-protocol/lib/index.js:329`），
+ * 所以直觉上该写 `'remote.memoryBank'` —— **但那是一个硬依赖**。
+ *
+ * 实测（`dsh --profile web --port 0`，界面直接显示）：
+ *
+ * ```
+ * web boot: 1 entry did not activate dsh-memory-bank:
+ *   pending (waiting for service: remote.memoryBank)
+ * ```
+ *
+ * 那个点号服务键在**宿主把面板服务注册好之前不存在**，于是整个客户端条目停在
+ * pending，**三块界面一个都不挂载** —— 包括那张本来只需要 `slots` 的卡片。
+ * 一个「数据面可能还没好」的可选依赖，把整片 UI 拖成了空白。
+ *
+ * 所以依赖降级成 `remote`（网关的客户端半边，随 web-app 必然存在），
+ * `memoryBank` 这个命名空间在**调用时**才解析（见 `memoryBankFacade`）。
  */
-const inject = ['slots', 'locale', 'remote', 'remote.memoryBank']
+const inject = ['slots', 'locale', 'remote']
+
+/**
+ * 把 `remote.memoryBank` 包成**惰性门面**。
+ *
+ * 为什么不在 `inject` 里写死、也不在 `apply` 里直接取：拿不到时不该白屏，
+ * 也不该静默 —— 每个方法返回一个**带原因**的 rejection，界面显示
+ * 「数据不可用」并说明为什么，而不是一个空面板。
+ *
+ * 这不是防御性编程，是这一版的核心判断（`docs/07` §2.9 ⑥）：
+ * **可选能力不许拖死本体。**
+ *
+ * @param {any} ctx 浏览器插件上下文
+ */
+function memoryBankFacade(ctx) {
+  const face = () => {
+    const namespace = ctx?.remote?.memoryBank
+    if (!namespace) {
+      throw new Error(
+        '记忆面板数据不可用：宿主没有暴露 memoryBank RPC 面 —— ' +
+          '通常是面板服务没有挂载（宿主启动日志里会有一条「面板服务未挂载：…」）。',
+      )
+    }
+    return namespace
+  }
+
+  return new Proxy(
+    {},
+    {
+      get(_target, method) {
+        return (...args) => {
+          try {
+            const namespace = face()
+            const call = namespace[method]
+            if (typeof call !== 'function') {
+              throw new Error(`memoryBank.${String(method)} 不是一个 RPC 方法（协议漂移？）`)
+            }
+            return Promise.resolve(call.apply(namespace, args))
+          } catch (error) {
+            return Promise.reject(error)
+          }
+        }
+      },
+    },
+  )
+}
 
 /**
  * 装上三块界面。宿主没挂对应槽时什么都不发生 —— 这是设计意图。
@@ -67,10 +126,15 @@ function apply(ctx) {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'memory-bank: dictionaries')
 
+  // 视图只碰 `remote.memoryBank`，所以传门面而不是整个 ctx：
+  // 这样「RPC 面还没好」不会在 render 期间抛，只在真正调用时变成一条可读的错误。
+  const view = { remote: { memoryBank: memoryBankFacade(ctx) } }
+
   // 两个控制器活在 `apply` 这一层：槽塌陷再恢复时，暂存的修改和已读的数据
   // 都还在（`inject` 的回调会被反复调用，状态不能放那里面）。
-  const config = createConfigController(ctx, t)
-  const memory = createMemoryController(ctx, t)
+  const config = createConfigController(view, t)
+  const memory = createMemoryController(view, t)
+
 
   ctx.effect(() => {
     void config.load()

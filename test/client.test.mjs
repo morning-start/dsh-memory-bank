@@ -526,15 +526,22 @@ test('client 加载：id 等于包名，factory 返回带 apply 的 exports', as
   assert.ok(Array.isArray(mod.inject))
 })
 
-test('client 加载：inject 含 slots 与 remote.memoryBank', async () => {
+test('client 加载：inject 只声明必然存在的服务（**不**写 remote.memoryBank）', async () => {
   const { module: mod } = await mount()
   assert.ok(mod.inject.includes('slots'), 'inject 缺 slots')
-  assert.ok(mod.inject.includes('remote'), 'inject 缺 remote')
-  assert.ok(
-    mod.inject.includes(`remote.${NAMESPACE}`),
-    `inject 缺 remote.${NAMESPACE}（命名空间 = Cordis 服务键）`,
-  )
   assert.ok(mod.inject.includes('locale'), 'inject 缺 locale')
+  assert.ok(mod.inject.includes('remote'), 'inject 缺 remote（网关的客户端半边）')
+
+  // **这是回归，不是洁癖。** `remote.memoryBank` 是点号服务键，宿主把面板服务
+  // 注册好之前它不存在 —— 写进 `inject` 就是硬依赖，整个客户端条目会停在
+  // `pending (waiting for service: remote.memoryBank)`，**三块界面一个都不挂载**。
+  // 实测过一次：dsh web 首屏直接显示 `web boot: 1 entry did not activate`。
+  assert.equal(
+    mod.inject.includes(`remote.${NAMESPACE}`),
+    false,
+    `inject 不许写 remote.${NAMESPACE} —— 那是硬依赖，会拖死整片 UI。` +
+      '命名空间在调用时由 memoryBankFacade 惰性解析。',
+  )
 })
 
 test('client 加载：id 必须等于 package.json 的 name', () => {

@@ -113,6 +113,38 @@ import { MemoryBankService } from './host/service.js'   // ← 会连工具面�
 
 > 通用规则：**可选能力永远不许用静态 import 挂在插件入口上。**
 
+### 在真 `dsh web` 里跑出来的两条（只有挂起来才会暴露）
+
+前 385 条测试全绿，但界面在真宿主里是**白屏**。两条都是这样挖出来的：
+
+1. **客户端的 `inject` 不许写 `remote.memoryBank`。** 那是硬依赖 —— 那个点号
+   服务键在宿主注册好面板服务之前不存在，于是整个客户端条目停在
+   `pending (waiting for service: remote.memoryBank)`，**三块界面一个都不挂载**，
+   连只需要 `slots` 的卡片都一起没了。首屏原文：
+   `web boot: 1 entry did not activate dsh-memory-bank`。
+   修法：`inject` 只留 `['slots','locale','remote']`，命名空间交给
+   `memoryBankFacade()` 调用时解析。回归锁：`test/client.test.mjs` 断言
+   `inject` **不含** `remote.memoryBank`。
+
+2. **第三方包注册不了 typert remote（已知阻断，未解决）。** 服务端能构造、
+   能 `ctx.reflect.provide`，但浏览器里的 `ctx.remote.memoryBank` 始终不存在。
+   根因：`typert.remote-client.js` 是**构建期产物**，被内联进宿主自己的 client
+   bundle（`dsh-api-remotes/lib/client.js` 里就是拼接段）；我们的 `./remote`
+   导出**没有任何东西会在浏览器里加载**。零构建的第三方插件拿不到这一面。
+   旁证：`dsh-pocket` 带一个手写的 `web-rpc.js`（24 KB）绕开它。
+
+   **当前状态：界面完整、数据面未接通。** 配置页如实显示「读取配置失败：记忆
+   面板数据不可用：宿主没有暴露 memoryBank RPC 面」+ 重试按钮 —— 不白屏、
+   不假数据。接通建议走手写 HTTP RPC（同 `dsh-pocket`），而不是继续折腾 typert。
+
+### 真宿主验证方式（可复现）
+
+```powershell
+dsh plugin --profile web add "link:E:/Workplace/extension/dsh-memory-bank"
+dsh --profile web --port 0 --no-open
+# 打开打印出来的带 token 的 URL → 插件 → 记忆库
+```
+
 
 ### Known gaps
 
