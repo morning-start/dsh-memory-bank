@@ -174,6 +174,53 @@ describe('http provider', () => {
     await channel.ensure(['x'.repeat(4)])
     assert.match(channel.describe(), /降级中/)
   })
+
+  it('**维度不一致 → 降级并说出来**（不是静默 0）', () => {
+    const logs = []
+    const channel = createEmbeddingChannel({
+      config: config(),
+      fetchImpl: async () => ({ ok: true, json: async () => ({ data: [] }) }),
+      log: (message) => logs.push(message),
+    })
+
+    // 0 的意思是「正交」（确实无关）；维度不同意味着「不可比」（换过模型）。
+    // 静默返回 0 会把一次配置事故当成一次干净的「不相关」判决。
+    assert.equal(channel.cosine(Float64Array.from([1, 0]), Float64Array.from([1, 0, 0])), 0)
+    assert.match(channel.describe(), /降级中/)
+    assert.ok(logs.some((line) => /维度不一致/.test(line)), '降级必须说出来')
+  })
+
+  it('**失败不缓存**（否则这份 owner 数组直到进程重启都没有向量）', async () => {
+    let fail = true
+    const fetchImpl = async (url, init) => {
+      if (fail) return { ok: false, status: 503 }
+      return { ok: true, json: async () => ({ data: JSON.parse(init.body).input.map(() => ({ embedding: [1, 0] })) }) }
+    }
+    const channel = createEmbeddingChannel({ config: config(), fetchImpl, log: () => {} })
+    const list = [{ ref: 'a.md', text: '甲' }]
+
+    assert.deepEqual(await vectorizeOwners(list, channel), [{ ref: 'a.md', vector: null }])
+    fail = false
+    const second = await vectorizeOwners(list, channel)
+    assert.ok(second[0].vector, '失败结果被缓存了 —— 服务恢复后仍然拿不到向量')
+  })
+
+  it('**缓存是 LRU 不是 FIFO**：命中即刷新序', async () => {
+    const fetchImpl = fakeFetch((body) => ({
+      ok: true,
+      json: async () => ({ data: body.input.map(() => ({ embedding: [1, 0] })) }),
+    }))
+    const channel = createEmbeddingChannel({ config: config(), fetchImpl })
+    const hot = 'hot-text'
+    const cold = Array.from({ length: 1999 }, (_, index) => `cold-${index}`)
+
+    await channel.ensure([hot])
+    await channel.ensure(cold) // 缓存填满（2000 条，含 hot）
+    assert.ok(channel.vectorOf(hot), 'hot 刚写进去')
+    await channel.ensure(['cold-2000']) // 逐出一条：LRU 该逐 cold-0，FIFO 逐 hot
+
+    assert.ok(channel.vectorOf(hot), '被反复命中的热文本被挤出去了 —— 这是 FIFO')
+  })
 })
 
 describe('G1 语义判决（开闸后）', () => {

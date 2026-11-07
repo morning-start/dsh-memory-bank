@@ -1,6 +1,6 @@
 /**
  * 接线冒烟：用假 ctx 跑一遍 `apply`，确认
- *   - 6 个工具注册（名字、schema 形状、output 声明）
+ *   - 7 个工具注册（名字、schema 形状、output 声明）
  *   - 1 个 systemPrompt.context（order 130、required:false）
  *   - 2 个事件监听器
  *   - disposer 全部可调用（卸载不留残留）
@@ -11,6 +11,11 @@
  * 在没有 profile 的机器上（例如 CI 只跑 lib/ 的单测）这一组**跳过**而不是失败 ——
  * 但不要用替身骗过它：`Config` 的形状是 Plugin Manager 的输入契约，
  * 真实验证必须在装了 profile 的环境里做（见 README 的验收清单）。
+ *
+ * **⚠ 这一组曾经是唯一覆盖接线的测试，而它永久跳过 —— 于是工具从 6 个变成 7 个
+ * 没人发现。所以「不依赖 peer」的那部分接线断言搬到了 `test/wiring.test.mjs`，
+ * 那一份**永远会跑**。这里只保留 `apply()` 独有的东西（Config schema 解析、
+ * 日志、卸载）。新增工具时两份都要改。
  */
 
 import assert from 'node:assert/strict'
@@ -120,7 +125,7 @@ afterEach(() => {
 })
 
 describe('插件行接线', { skip: peerMissing ? '@deepseek-ai/schemastery 未安装（需要 DSH profile）' : false }, () => {
-  it('注册 6 个工具，名字与 output 契约正确', () => {
+  it('注册 7 个工具，名字与 output 契约正确', () => {
     apply(ctx, {})
 
     const names = ctx._tools.map((tool) => tool.name).sort()
@@ -128,6 +133,7 @@ describe('插件行接线', { skip: peerMissing ? '@deepseek-ai/schemastery 未�
       'memory_audit',
       'memory_forget',
       'memory_pending',
+      'memory_promote',
       'memory_recall',
       'memory_remember',
       'memory_resolve',

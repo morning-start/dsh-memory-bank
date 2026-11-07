@@ -5,7 +5,7 @@
  * `createHooks`，和运行时同一批函数。跑不过的就是真没做完。
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -241,18 +241,18 @@ check('6', '无关查询 → abstain 并说出拒的是哪道门', () => {
 /* ── 7 · 全流程零网络调用 ──────────────────────────────────────── */
 
 check('7', '全流程零网络调用', () => {
-  const source = [
-    'lib/gate.js', 'lib/recall.js', 'lib/capture.js', 'lib/store.js', 'lib/index-build.js',
-    'lib/claims.js', 'lib/lifecycle.js', 'lib/promote.js', 'lib/draft.js', 'lib/tools.js',
-    'lib/hooks.js', 'lib/command.js', 'lib/model.js', 'lib/util.js', 'lib/config.js', 'lib/index.js',
-  ]
-    .map((file) => readFileSync(join(process.cwd(), file), 'utf8'))
-    .join('\n')
+  // **扫目录，不列清单。** 硬编码的文件名列表每加一个模块就要手动同步，
+  // 而漏掉的那个恰好是唯一发网络请求的模块时，这条检查会**通过**。
+  const files = readdirSync(join(process.cwd(), 'lib'))
+    .filter((name) => name.endsWith('.js'))
+    .sort()
+  assert(files.length >= 19, `lib/ 只有 ${files.length} 个模块，比预期少 —— 检查是不是扫错目录`)
+  const source = files.map((file) => readFileSync(join(process.cwd(), 'lib', file), 'utf8')).join('\n')
   const forbidden = [/\bfetch\s*\(/, /require\(['"]https?['"]\)/, /from\s+['"]node:https?['"]/, /\baxios\b/]
   for (const pattern of forbidden) {
     assert(!pattern.test(source), `发现网络调用：${pattern}`)
   }
-  return '16 个模块零 fetch / http / https / axios'
+  return `${files.length} 个模块零 fetch / http / https / axios`
 })
 
 /* ── 报告 ─────────────────────────────────────────────────────── */

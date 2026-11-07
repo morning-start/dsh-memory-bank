@@ -94,6 +94,25 @@ describe('衰减', () => {
     assert.equal(accessScore({ accessCount: 50 }), 1)
     assert.ok(accessScore({ accessCount: 5 }) > accessScore({ accessCount: 1 }))
   })
+
+  /* ── 回归：三处参考时刻必须同一个函数（COALESCE vs MAX） ── */
+
+  it('**刚改过的记忆不算休眠**（按 MAX 语义，不是 lastVerifiedAt）', () => {
+    // 上一次确认是 300 天前，但 2 天前又改了内容 —— 那条编辑不能被静默丢弃
+    const edited = entry({ lastVerifiedAt: daysAgo(300), modifiedAt: daysAgo(2), createdAt: daysAgo(400) })
+    assert.equal(isDormant(edited, NOW), false, '旧实现按 lastVerifiedAt 算，把刚改过的记忆判成休眠')
+    assert.equal(suggestsDeprecation(edited, NOW), false)
+  })
+
+  it('坏时间戳被跳过，不因为坏值永远休眠', () => {
+    const broken = entry({ lastVerifiedAt: 'not-a-date', modifiedAt: daysAgo(2), createdAt: 'garbage' })
+    assert.equal(isDormant(broken, NOW), false, '旧实现 daysSince(坏值) = Infinity，永远休眠')
+  })
+
+  it('reviewHints 与 isDormant 用同一个参考时刻', () => {
+    const edited = entry({ body: 'PR #10 has been open for a while', lastVerifiedAt: daysAgo(300), modifiedAt: daysAgo(2) })
+    assert.deepEqual(reviewHints(edited, NOW), [], '刚改过就不该点火')
+  })
 })
 
 describe('陈旧提示', () => {
@@ -197,6 +216,36 @@ describe('合并', () => {
   it('少于 2 条抛错', () => {
     assert.throws(() => consolidate([similar[0]]), /at least 2/)
   })
+
+  /* ── 回归：consolidate 压平 evidence → 合并产物立刻 quarantined ── */
+
+  it('合并产物**原样保留**每条锚点的 kind 与 hash', () => {
+    const merged = consolidate(
+      [
+        entry({
+          id: 'a',
+          evidence: [
+            { kind: 'symbol', ref: 'src/a.ts#createPool', hash: 'h1' },
+            { kind: 'file', ref: 'src/a.ts:1-2' },
+          ],
+        }),
+        entry({
+          id: 'b',
+          evidence: [
+            { kind: 'commit', ref: 'abc1234' },
+            { kind: 'file', ref: 'src/a.ts:1-2' },
+          ],
+        }),
+      ],
+      'merge',
+    )
+    assert.deepEqual(
+      merged.evidence.map((item) => `${item.kind}:${item.ref}`).sort(),
+      ['commit:abc1234', 'file:src/a.ts:1-2', 'symbol:src/a.ts#createPool'],
+      '旧实现把 symbol / commit 伪造成文件路径，合并产物一落盘就 quarantined',
+    )
+    assert.equal(merged.evidence.find((item) => item.kind === 'symbol').hash, 'h1')
+  })
 })
 
 describe('dream pass', () => {
@@ -268,6 +317,19 @@ describe('dream pass', () => {
     assert.equal(DREAM.centrality.damping, 0.85)
     assert.equal(DREAM.clusters.minDensity, 0.5)
     assert.equal(DREAM.clusters.minClusterSize, 3)
+  })
+
+  /* ── 回归：模板字符串把 undefined 变成字面量 token ── */
+
+  it('没有 about / title 的孤儿不因为 "undefined" 字面量被连边', () => {
+    const report = dream(
+      [
+        entry({ id: 'a', about: undefined, title: undefined, relations: [] }),
+        entry({ id: 'b', about: undefined, title: undefined, relations: [] }),
+      ],
+      { now: NOW },
+    )
+    assert.deepEqual(report.passes.orphans, [], '两条空记忆共享的 token 只能是 "undefined" —— 那是凭空造边')
   })
 })
 

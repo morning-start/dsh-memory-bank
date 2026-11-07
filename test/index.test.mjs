@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
   COMPILER_VERSION,
   TOKENIZER_PROFILE,
+  clearSnapshotCache,
   compileSnapshot,
   collectUnreferenced,
   ensureSnapshot,
@@ -97,6 +98,59 @@ describe('快照编译', () => {
     const kinds = new Set(snapshot.exactMap.map((item) => item.kind))
     for (const kind of ['name', 'title', 'trigger', 'path', 'basename']) assert.ok(kinds.has(kind), kind)
   })
+
+  it('**扫描顺序不影响 snapshotId**（同样内容不同顺序 = 同一快照）', () => {
+    const forward = compileSnapshot([entry('a'), entry('b')])
+    const backward = compileSnapshot([entry('b'), entry('a')])
+    assert.equal(forward.snapshotId, backward.snapshotId, '目录遍历顺序不是语义的一部分')
+    assert.deepEqual(
+      forward.documents.map((doc) => doc.id),
+      ['a', 'b'],
+      'documents 必须按 id 排 —— postings 的 docIndex 依赖它',
+    )
+  })
+
+  it('**document 带上 contentHash 覆盖的全部语义字段**', () => {
+    // 字段集不一致的后果：关系 / 取代 / 过期时间改了，快照重建了，
+    // 但召回侧看到的还是旧值 —— 新鲜度判定和可见内容说的不是同一件事。
+    const snapshot = compileSnapshot([
+      entry('a', {
+        actionRisk: 'R4',
+        relations: [{ type: 'related_to', target: 'b' }],
+        claims: [{ id: 'claim-1' }],
+        provenance: 'measured',
+        confidence: 'verified',
+        supersedes: ['b'],
+        expiresAt: '2027-01-01T00:00:00Z',
+        pinned: true,
+      }),
+    ])
+    const doc = snapshot.documents[0]
+    for (const key of [
+      'id',
+      'title',
+      'kind',
+      'about',
+      'content',
+      'confidence',
+      'provenance',
+      'status',
+      'actionRisk',
+      'evidence',
+      'relations',
+      'claims',
+      'scope',
+      'triggers',
+      'supersedes',
+      'expiresAt',
+      'pinned',
+    ]) {
+      assert.ok(key in doc, `document 少了 ${key} —— contentHash 覆盖它，召回侧却看不见`)
+    }
+    assert.deepEqual(doc.supersedes, ['b'])
+    assert.equal(doc.expiresAt, '2027-01-01T00:00:00Z')
+    assert.equal(doc.pinned, true)
+  })
 })
 
 describe('发布与读取', () => {
@@ -164,6 +218,33 @@ describe('ensureSnapshot', () => {
     seed(entry('a'))
     ensureSnapshot(root)
     assert.equal(ensureSnapshot(root, { force: true }).trigger, 'forced')
+  })
+
+  it('**分词器身份变了 → 重建**（否则在新查询上跑旧 postings）', () => {
+    seed(entry('a'))
+    const first = ensureSnapshot(root)
+    const dir = join(layout(root).snapshots, first.snapshot.snapshotId)
+    const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'))
+    writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ ...manifest, tokenizerProfile: 'dsh-memory-tokenizer-v0' }), 'utf8')
+    clearSnapshotCache()
+
+    const rebuilt = ensureSnapshot(root)
+    assert.equal(rebuilt.rebuilt, true, '分词器换了还复用旧快照')
+    assert.equal(rebuilt.trigger, 'tokenizer-changed')
+  })
+
+  it('**HEAD 指向坏快照时自愈**（不能永久停在 previous）', () => {
+    seed(entry('a'))
+    ensureSnapshot(root)
+    // 再发布一份：PREVIOUS 就指向「上一个好版本」
+    publishSnapshot(root, compileSnapshot([entry('a'), entry('b')]))
+    writeFileSync(layout(root).head, 'deadbeef\n', 'utf8')
+    clearSnapshotCache()
+    assert.equal(readSnapshot(root).selected, 'previous')
+
+    const healed = ensureSnapshot(root)
+    assert.equal(healed.snapshot.selected, 'current', 'HEAD 停在 previous 上 —— 降级变成了永久状态')
+    assert.equal(readFileSync(layout(root).head, 'utf8').trim(), healed.snapshot.snapshotId, 'HEAD 必须指回这份好快照')
   })
 
   it('空语料也能出版本（abstain 的前提）', () => {

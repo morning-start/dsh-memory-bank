@@ -128,7 +128,7 @@ for (const group of [a, b, c]) {
 /* ── 终审：走完整 review（G1 只拒掉一部分，其余门也可能拒） ──── */
 
 console.log('\n' + '='.repeat(74))
-console.log('终审（完整八道门，看 G1 的判决会不会被别的门盖掉）\n')
+console.log('终审（完整十道门，看 G1 的判决会不会被别的门盖掉）\n')
 
 let correct = 0
 const detail = []

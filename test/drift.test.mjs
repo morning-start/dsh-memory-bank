@@ -10,11 +10,12 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 
+import { anchorHash, symbolBodyHash } from '../lib/anchor.js'
 import { DRIFT, checkAnchor, checkEvidence, driftReport, worstOf } from '../lib/drift.js'
 import { contentHash, parseEntry, serializeEntry } from '../lib/model.js'
 
@@ -220,5 +221,174 @@ describe('内容寻址（回归）', () => {
     assert.equal(back.body, '正文', '尾部空白是噪声，规范形式去掉它')
     // 而且**幂等**：再序列化一次，文件逐字节相同
     assert.equal(serializeEntry(back), serializeEntry({ ...back, body: back.body }))
+  })
+})
+
+/* ── 回归：带行号锚点曾 100% 假 advisory ─────────────────────────
+ * 根因是两侧算法不同：gate 写入哈希整个文件，drift 复查哈希切片。
+ * 现在两边都走 anchor.js 的 anchorHash —— 文件没改必须 healthy。
+ */
+
+describe('锚点哈希（跨文件唯一算法）', () => {
+  const textOf = (path) => readFileSync(join(root, path), 'utf8')
+
+  it('**文件没改 → healthy**（带行号也走 anchorHash）', () => {
+    const text = textOf('src/db/pool.ts')
+    const lineHash = anchorHash(text, 'src/db/pool.ts:3')
+    assert.equal(checkAnchor(root, { kind: 'file', ref: 'src/db/pool.ts:3', hash: lineHash }).verdict, DRIFT.healthy)
+
+    const wholeHash = anchorHash(text, 'src/db/pool.ts')
+    assert.equal(checkAnchor(root, { kind: 'file', ref: 'src/db/pool.ts', hash: wholeHash }).verdict, DRIFT.healthy)
+  })
+
+  it('切片真的变了 → advisory', () => {
+    const hash = anchorHash(textOf('src/db/pool.ts'), 'src/db/pool.ts:3-5')
+    write('src/db/pool.ts', ['export const DB_POOL_MAX = 10', '', 'export function createPool() {', '  return DB_POOL_MAX + 1', '}', ''].join('\n'))
+    assert.equal(checkAnchor(root, { kind: 'file', ref: 'src/db/pool.ts:3-5', hash }).verdict, DRIFT.advisory)
+  })
+
+  it('尾部换行不算一行（off-by-one 会让消失的切片报 healthy）', () => {
+    write('src/two.txt', 'a\nb\n')
+    assert.equal(checkAnchor(root, { kind: 'file', ref: 'src/two.txt:2' }).verdict, DRIFT.healthy)
+    assert.equal(checkAnchor(root, { kind: 'file', ref: 'src/two.txt:3' }).verdict, DRIFT.quarantined)
+  })
+
+  it('空文件是 0 行', () => {
+    write('src/empty.txt', '')
+    assert.equal(checkAnchor(root, { kind: 'file', ref: 'src/empty.txt:1' }).verdict, DRIFT.quarantined)
+    assert.equal(checkAnchor(root, { kind: 'file', ref: 'src/empty.txt' }).verdict, DRIFT.healthy)
+  })
+
+  /* ── 回归：gate 读文件时剥了 BOM，drift 没剥 → 假 advisory ── */
+
+  it('BOM 文件：gate 写入的哈希在 drift 侧仍然 healthy', () => {
+    write('src/bom.ts', '\uFEFFexport const A = 1\n')
+    const text = readFileSync(join(root, 'src/bom.ts'), 'utf8')
+    // gate 的 readRepoFile 会先剥 BOM 再算哈希
+    const hash = anchorHash(text.replace(/^\uFEFF/, ''), 'src/bom.ts:1')
+    assert.equal(checkAnchor(root, { kind: 'file', ref: 'src/bom.ts:1', hash }).verdict, DRIFT.healthy)
+  })
+})
+
+/* ── 回归：symbolBody 在参数表就截断 → 体真改了报 healthy ───────── */
+
+describe('符号体：括号栈', () => {
+  const hashOf = (path, name) => symbolBodyHash(readFileSync(join(root, path), 'utf8'), name).hash
+
+  it('解构参数里的 `{` 不是函数体起点', () => {
+    write('src/pick.ts', 'export function pick({ id, name }) { return id }\n')
+    const hash = hashOf('src/pick.ts', 'pick')
+    write('src/pick.ts', 'export function pick({ id, name }) { return name }\n')
+    assert.equal(
+      checkAnchor(root, { kind: 'symbol', ref: 'src/pick.ts#pick', hash }).verdict,
+      DRIFT.advisory,
+      '体改了必须 advisory —— 旧实现在参数表就截断，报 healthy',
+    )
+  })
+
+  it('字符串里的 `}` 不是函数体结束', () => {
+    write('src/format.ts', "function format(n) { return '}' }\n")
+    const hash = hashOf('src/format.ts', 'format')
+    write('src/format.ts', "function format(n) { return '}}' }\n")
+    assert.equal(checkAnchor(root, { kind: 'symbol', ref: 'src/format.ts#format', hash }).verdict, DRIFT.advisory)
+  })
+
+  it('注释里的 `}` 不会提前归零', () => {
+    write('src/guarded.ts', ['function guarded() {', '  // 别在这里写 }', '  return 1', '}', ''].join('\n'))
+    const hash = hashOf('src/guarded.ts', 'guarded')
+    write('src/guarded.ts', ['function guarded() {', '  // 别在这里写 }', '  return 2', '}', ''].join('\n'))
+    assert.equal(checkAnchor(root, { kind: 'symbol', ref: 'src/guarded.ts#guarded', hash }).verdict, DRIFT.advisory)
+  })
+
+  it('体没改 → healthy（同一算法，不假报警）', () => {
+    write('src/pick.ts', 'export function pick({ id, name }) { return id }\n')
+    const hash = hashOf('src/pick.ts', 'pick')
+    assert.equal(checkAnchor(root, { kind: 'symbol', ref: 'src/pick.ts#pick', hash }).verdict, DRIFT.healthy)
+  })
+})
+
+/* ── 回归：findDefinition 把行首调用当定义 ─────────────────────── */
+
+describe('定义形态', () => {
+  it('只在行首调用点出现的名字 → symbol-not-a-definition', () => {
+    write('src/caller.ts', ['export function make() {', '  return 1', '}', 'createPool({ max: 10 })', ''].join('\n'))
+    assert.equal(checkAnchor(root, { kind: 'symbol', ref: 'src/caller.ts#createPool' }).verdict, DRIFT.notADefinition)
+  })
+
+  it('类方法定义仍然认', () => {
+    write('src/service.ts', ['export class Pool {', '  createPool(size) {', '    return size', '  }', '}', ''].join('\n'))
+    assert.equal(checkAnchor(root, { kind: 'symbol', ref: 'src/service.ts#createPool' }).verdict, DRIFT.healthy)
+  })
+})
+
+/* ── 回归：test 锚点分支曾是空壳（无条件 unverifiable） ─────────── */
+
+describe('测试锚点', () => {
+  it('测试名还在 → healthy（单双引号都认）', () => {
+    write('test/unit/pool.test.mjs', ['import { it } from "node:test"', "it('pool 上限', () => {})", 'it("带引号的名字", () => {})', ''].join('\n'))
+    assert.equal(checkAnchor(root, { kind: 'test', ref: 'pool 上限' }).verdict, DRIFT.healthy)
+    assert.equal(checkAnchor(root, { kind: 'test', ref: '带引号的名字' }).verdict, DRIFT.healthy)
+  })
+
+  it('测试名找不到 → quarantined', () => {
+    write('test/unit/pool.test.mjs', "it('pool 上限', () => {})\n")
+    assert.equal(checkAnchor(root, { kind: 'test', ref: '不存在的测试' }).verdict, DRIFT.quarantined)
+  })
+
+  it('`tests/` 与 `__tests__/` 也认', () => {
+    write('__tests__/a.test.js', "test('回执往返', () => {})\n")
+    assert.equal(checkAnchor(root, { kind: 'test', ref: '回执往返' }).verdict, DRIFT.healthy)
+  })
+
+  it('没有测试目录 → unverifiable（没资格下「不存在」的判决）', () => {
+    assert.equal(checkAnchor(root, { kind: 'test', ref: '任何东西' }).verdict, DRIFT.unverifiable)
+  })
+})
+
+/* ── 回归：路径无根约束（绝对路径必然 quarantined / ../ 能读库外） ── */
+
+describe('路径越界', () => {
+  it('绝对路径锚点 → healthy（join 会拼成 root\\abs）', () => {
+    const absolute = join(root, 'src', 'db', 'pool.ts')
+    assert.equal(checkAnchor(root, { kind: 'file', ref: absolute }).verdict, DRIFT.healthy)
+  })
+
+  it('../ 逃出仓库 → unsafe-path，而不是「文件不存在」', () => {
+    const verdict = checkAnchor(root, { kind: 'file', ref: '../secret.txt' })
+    assert.equal(verdict.verdict, DRIFT.unsafePath)
+    assert.doesNotMatch(verdict.detail, /文件不存在/)
+  })
+
+  it('符号锚点的越界路径同样 unsafe-path', () => {
+    assert.equal(checkAnchor(root, { kind: 'symbol', ref: '../secret.ts#x' }).verdict, DRIFT.unsafePath)
+  })
+})
+
+/* ── 回归：报告字段 ─────────────────────────────────────────────── */
+
+describe('报告字段', () => {
+  it('drifted 包含 symbol-not-a-definition（指错的锚点也要点名）', () => {
+    const result = checkEvidence(root, { id: 'e', evidence: [{ kind: 'symbol', ref: 'src/util.ts#createPool' }] })
+    assert.equal(result.verdict, DRIFT.notADefinition)
+    assert.equal(result.drifted.length, 1)
+    assert.equal(result.drifted[0].verdict, DRIFT.notADefinition)
+  })
+
+  it('unverifiable 按**锚点**计，不是按条目计', () => {
+    const report = driftReport(root, [
+      { id: 'e', evidence: [{ kind: 'commit', ref: 'abc1234' }, { kind: 'command', ref: 'npm test' }] },
+    ])
+    assert.equal(report.checked, 1)
+    assert.equal(report.unverifiable, 2)
+  })
+
+  it('at 是 ISO 串（不是毫秒数）', () => {
+    assert.equal(driftReport(root, [], { now: Date.parse('2026-11-06T00:00:00Z') }).at, '2026-11-06T00:00:00.000Z')
+  })
+
+  it('unsafe-path 单独成桶（不混进「锚点消失」）', () => {
+    const report = driftReport(root, [{ id: 'e', evidence: [{ kind: 'file', ref: '../secret.txt' }] }])
+    assert.equal(report.unsafePath.length, 1)
+    assert.equal(report.quarantined.length, 0)
   })
 })

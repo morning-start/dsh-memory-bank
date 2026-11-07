@@ -89,7 +89,22 @@ describe('抽取', () => {
   })
 
   it('依赖版本断言', () => {
-    assert.deepEqual(refs('upgraded vitest@2.0.3 across packages'), ['dependency:vitest@2.0.3:resolved'])
+    // `package@1.2.3` 只声明版本，**不是**「已解决」—— 记成 resolved 是把
+    // 「装了哪个版本」冒充成「这件事办完了」
+    assert.deepEqual(refs('upgraded vitest@2.0.3 across packages'), ['dependency:vitest@2.0.3:unverified'])
+  })
+
+  /* ── 回归：状态窗口跨句 / 无句界 ── */
+
+  it('状态词不跨句：`PR #1 was merged. PR #2 is still open.` 里 #2 是 open', () => {
+    assert.deepEqual(refs('PR #1 was merged. PR #2 is still open.'), [
+      'pull-request:acme-api#1:resolved',
+      'pull-request:acme-api#2:open',
+    ])
+  })
+
+  it('紧邻的状态词优先（离得近的才是这个 ref 的状态）', () => {
+    assert.deepEqual(refs('PR #10 merge HELD'), ['pull-request:acme-api#10:open'])
   })
 })
 
@@ -109,6 +124,17 @@ describe('预处理', () => {
   it('抹空保留偏移（等长空格）', () => {
     const text = '[[PR #1]] and PR #2 merged'
     assert.equal(text.length, blankNonAssertions(text).length)
+  })
+
+  /* ── 回归：只剥行内代码，三反引号围栏漏网 ── */
+
+  it('三反引号围栏里的内容不算断言', () => {
+    const text = ['示例：', '```js', 'const note = "PR #42 is open"', '```', '真实情况：PR #7 merged'].join('\n')
+    const found = refs(text)
+    assert.ok(!found.some((item) => item.includes('#42')), `围栏里的 #42 不该被抽成断言：${JSON.stringify(found)}`)
+    assert.ok(found.some((item) => item.includes('#7:resolved')))
+    // 抹空必须等长，否则后续所有偏移都会错位
+    assert.equal(blankNonAssertions(text).length, text.length)
   })
 })
 
@@ -152,6 +178,18 @@ describe('对账', () => {
     const stats = claimStats(entries)
     assert.equal(stats.sample[0].contradicted, true)
     assert.ok(stats.sample.length >= 1)
+  })
+
+  /* ── 回归：contradicted.push 在 row 循环里 → 矛盾数翻倍 ── */
+
+  it('同一 ref 有 N 条 open 只算**一条**矛盾', () => {
+    const result = reconcileClaims([
+      { id: 'a', status: 'active', scope: ['repo:x'], claims: [{ kind: 'pull-request', ref: 'x#10', state: 'open' }] },
+      { id: 'b', status: 'active', scope: ['repo:x'], claims: [{ kind: 'pull-request', ref: 'x#10', state: 'open' }] },
+      { id: 'c', status: 'active', scope: ['repo:x'], claims: [{ kind: 'pull-request', ref: 'x#10', state: 'resolved' }] },
+    ])
+    assert.equal(result.contradicted.length, 1, '矛盾数是「有几处对不上」，不是数行数')
+    assert.deepEqual(result.contradicted[0].openBy, ['a', 'b'])
   })
 })
 

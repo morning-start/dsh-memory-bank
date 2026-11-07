@@ -17,6 +17,7 @@ import { recall, renderRecall } from '../lib/recall.js'
 import { ensureSnapshot } from '../lib/index-build.js'
 import { MemoryError, createToolDefinitions } from '../lib/tools.js'
 import { readAll, readProposals, layout } from '../lib/store.js'
+import * as store from '../lib/store.js'
 
 let root
 let tools
@@ -107,6 +108,42 @@ describe('ACCEPT 路径', () => {
     })
     const audit = tool('memory_audit')({})
     assert.match(audit, /回执全部健康|活跃 1 条/)
+  })
+
+  /**
+   * 升级路径：旧版本回执**不是篡改**。
+   *
+   * 0.1.1 把 `actionRisk` / `relations` / `provenance` / `confidence` / `status` /
+   * `claims` 补进了 `contentHash`（漏了它们，把记忆改成 R5 之后索引永不重建）。
+   * 哈希字段集一变，**所有旧回执都对不上** —— 而那些记忆一个字都没被改。
+   *
+   * 如果不管版本号，升级后的第一次 `memory_audit` 会把整库标成「正文被改」。
+   * 那正是一次**虚假的篡改指控**，比没有回执更糟 —— 它训练用户忽略这个警告。
+   */
+  it('**旧版本回执报 needs-reseed，不报 tampered**', () => {
+    const { appendReceipt, receiptStatus, writeEntry, findEntry } = store
+    const entry = writeEntry(root, {
+      id: 'legacy_receipt',
+      title: '旧回执',
+      kind: 'fact',
+      about: '升级路径',
+      body: SIX('旧回执的正文。'),
+      evidence: [{ kind: 'file', ref: 'src/db/pool.ts' }],
+      provenance: 'measured',
+      actionRisk: 'R1',
+    })
+    appendReceipt(root, entry)
+    const fresh = findEntry(root, 'legacy_receipt')
+    assert.equal(receiptStatus(root, fresh), 'ok')
+
+    // 把回执降级成 0.1.0 的形态（没有 hashVersion）
+    const receiptsPath = layout(root).receipts
+    const store_ = JSON.parse(readFileSync(receiptsPath, 'utf8'))
+    for (const item of store_.receipts) delete item.hashVersion
+    writeFileSync(receiptsPath, `${JSON.stringify(store_, null, 2)}\n`, 'utf8')
+
+    assert.equal(receiptStatus(root, fresh), 'needs-reseed', '旧回执必须报 needs-reseed')
+    assert.match(tool('memory_audit')({}), /回执待重签/, 'memory_audit 必须单独渲染 needs-reseed')
   })
 })
 
