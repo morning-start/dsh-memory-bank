@@ -6,6 +6,74 @@
 
 ---
 
+## [0.3.3] - 2026-11-07
+
+> 这一版做两件互相咬合的事：**把死字段 `authority` 接上**，**把不可复算的
+> `置信` 从注入路径换掉**。
+>
+> 起因是「无法保证记忆准确度的时候给记忆打分，会影响 agent 判断」。
+> 答案不是把分数算得更准（写入时没有真值可算），而是**给模型一个可核的信号，
+> 取代不可核的那个**。
+
+### Fixed · `authority` 是死字段
+
+- **根因**：`RANKING.authorityStrength` 列了三个值（`observed` / `normative` /
+  `user-confirmed`），`recall.js` 读 `doc.authority`，而**全仓没有任何地方写
+  `entry.authority`** —— 于是每条记忆都走 `?? 0.75` 兜底，这个轴事实上不存在。
+- **这是本仓库第三次为「一张表活着、没人往里写」付账**（前两次：
+  `graphKindStrength` 死表、`confidence` 标签当分数用）。
+- **修法**：`model.AUTHORITIES` 收敛为**两个值**，且各自只有一个产生点 ——
+
+  | 值 | 唯一产生点 |
+  |---|---|
+  | `observed`（未背书，仅模型观察） | `memory_remember` / 自动捕获 `buildCandidate` / 合并 |
+  | `user-confirmed`（用户确认） | `memory_resolve` 的 **accept** 分支 |
+
+- **为什么由写入通道决定**：`docs/01:71` 的纪律是「条目不能靠声明获得权威」。
+  `memory_remember` 刻意**不读**候选里的 `authority` 字段 —— 重写一条已签名记忆
+  会把它降回 `observed`，因为正文变了，旧签名就不该继续有效。
+- **删掉 `normative` / `advisory`**：前者没有产生机制；后者与 `LIFECYCLE_STATES`
+  里的同名状态不同轴，是混淆源。一个永不产生的枚举值是本仓库记录过两次的 bug 类型。
+- **回归**：`test/protocol.test.mjs`「accept 把权威从 `observed` 抬到
+  `user-confirmed`」、`test/lifecycle.test.mjs`「authority 取最弱」与
+  「缺权威按 observed 算」。
+
+### Changed · 渲染 `权威` 而不是 `置信`
+
+- **根因**：`renderRecall` 渲染的是 `置信：${result.confidence}`，而那个值来自
+  `confidenceLabel(computeConfidence(...))` —— **五项形态加权和**（信号强度 +
+  证据 kind + 来源 + 锚点覆盖率 + scope 是否为空）。它测的是「这条写得多完整」，
+  不是「这条是不是真的」；而 `verified` 这个词在宣称一次**从未发生**的验证。
+- **更坏的是它不可复算**：模型看不到那五项权重，也没法重算，只能选择相信。
+  而记忆系统最不该批量生产的东西就是「相信」。
+- **修法**：渲染 `权威：未背书（仅模型观察）` / `权威：用户确认`。
+  这是**可核的** —— 去看 `memory_pending`、看 `ledger.jsonl`、或者直接问用户。
+  两个值都不是估计，是事实。
+- `confidence` 仍留在 envelope 上（`promote` 的进包资格按它比），**只是不再注入给模型**。
+- **回归**：`test/recall.test.mjs`「渲染 · 权威而不是置信」五条。
+
+### Changed · `RECEIPT_HASH_VERSION` 2 → 3
+
+- `authority` 进 `contentHash`（`lib/model.js`）—— 它落在快照 document 上、
+  被渲染给模型看，改了它不重建索引，模型看到的就还是旧权威。
+  与 0.1.1 把 `actionRisk` 补进去是同一个理由。
+- 哈希字段集变了，**旧回执全部对不上**。走既有的升级路径：版本低于当前的报
+  `needs-reseed`（重签一次），**不报 `tampered`** ——
+  虚假的篡改指控比没有回执更糟，它训练用户忽略这个警告。
+- **回归**：`test/collision.test.mjs`「authority · 落盘与哈希」三条。
+
+### 实测
+
+```
+npm test                    509 → 520 条（+11）
+scripts/check.mjs           70 文件 / 2 目录路由 / 死导出 0
+scripts/doctor.mjs          10 项通过
+bench/acceptance.mjs        7/7 · 33 个模块零网络
+build-client --check        114767 字节一致
+```
+
+---
+
 ## [0.3.2] - 2026-11-07
 
 > 这一版只做一件事：**G1 归属门的 owner 目录集合改成推导，不再写死 `docs`。**

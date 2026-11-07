@@ -27,6 +27,7 @@ import {
   reviewHints,
   stripQuoted,
   suggestsDeprecation,
+  weakestAuthority,
   weakestConfidence,
   worstActionRisk,
 } from '../lib/lifecycle.js'
@@ -285,6 +286,18 @@ describe('合并 · 权威只能保持或降低', () => {
     assert.equal(merged.provenance, 'self-concluded')
   })
 
+  it('authority 取最弱 —— 合并后的那段话没有人看过', () => {
+    const merged = consolidate([
+      entry({ id: 'a', authority: 'user-confirmed' }),
+      entry({ id: 'b', authority: 'observed' }),
+    ])
+    assert.equal(
+      merged.authority,
+      'observed',
+      '人签过字的记忆 + 模型观察的记忆合并，产物不能带 user-confirmed 标签',
+    )
+  })
+
   it('合并产物**从未被验证过** —— lastVerifiedAt 是 null，不是 now', () => {
     const merged = consolidate([entry({ id: 'a' }), entry({ id: 'b' })])
     assert.equal(merged.lastVerifiedAt, null, '一次合并给产物盖「刚刚验证过」，会把新鲜度、陈旧度、休眠三处一起放宽')
@@ -309,6 +322,11 @@ describe('weakestConfidence / worstActionRisk 的兜底', () => {
   it('缺风险按 R1 算 —— 与 index-build / store 的兜底同口径', () => {
     assert.equal(worstActionRisk([{ actionRisk: undefined }, { actionRisk: 'R3' }]), 'R3')
     assert.equal(worstActionRisk([{ actionRisk: undefined }]), 'R1')
+  })
+
+  it('缺权威按 observed 算 —— 没写不等于有人背书', () => {
+    assert.equal(weakestAuthority([{ authority: undefined }, { authority: 'user-confirmed' }]), 'observed')
+    assert.equal(weakestAuthority([{ authority: undefined }]), 'observed')
   })
 })
 

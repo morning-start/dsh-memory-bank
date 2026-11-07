@@ -378,6 +378,52 @@ describe('常驻层', () => {
   })
 })
 
+/* ── 渲染给模型看的那一行 ─────────────────────────────────────────── */
+
+/**
+ * 上一版渲染的是 `置信：verified` —— 而那个值来自 `confidenceLabel(五项加权和)`，
+ * `verified` 这个词在宣称一次**从未发生**的验证。更坏的是它**不可复算**：
+ * 模型看不到那五项权重，也没法重算，只能选择相信。
+ *
+ * 现在渲染的是 `权威` —— 「有没有人看过这条并签了字」。这是可核的：
+ * 去看 `memory_pending`、看 `ledger.jsonl`、或者直接问用户。
+ *
+ * `confidence` 仍然留在 envelope 上（`promote` 的进包资格按它比），
+ * 只是**不再注入给模型**。
+ */
+describe('渲染 · 权威而不是置信', () => {
+  const renderOne = (overrides = {}) => {
+    const snapshot = snapshotOf(
+      entry('pool_cap', { title: '连接池上限排查', about: 'staging 健康检查超时', ...overrides }),
+    )
+    return renderRecall(recall('连接池上限排查', snapshot, { config: CONFIG }))
+  }
+
+  it('**不再渲染 `置信`** —— 那个数不可复算', () => {
+    assert.doesNotMatch(renderOne({ confidence: 'verified' }), /置信/)
+  })
+
+  it('未背书 → 明说「仅模型观察」', () => {
+    assert.match(renderOne({ authority: 'observed' }), /权威：未背书（仅模型观察）/)
+  })
+
+  it('人签过字 → 说「用户确认」', () => {
+    assert.match(renderOne({ authority: 'user-confirmed' }), /权威：用户确认/)
+  })
+
+  it('缺 `authority` 按 observed 算 —— 没写不等于有人背书', () => {
+    assert.match(renderOne(), /未背书/)
+  })
+
+  it('envelope 上仍然带着 `confidence`（推广门要用）', () => {
+    const snapshot = snapshotOf(
+      entry('pool_cap', { title: '连接池上限排查', about: 'staging 健康检查超时', confidence: 'verified' }),
+    )
+    const envelope = recall('连接池上限排查', snapshot, { config: CONFIG })
+    assert.equal(envelope.results[0].confidence, 'verified')
+  })
+})
+
 /* ── 排序常量 ─────────────────────────────────────────────────────── */
 
 describe('排序常量', () => {

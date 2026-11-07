@@ -289,7 +289,26 @@ describe('DEFER 与裁决', () => {
     assert.equal(readAll(root).entries.length, 1)
   })
 
-  it('reject 留档且不参与召回', () => {
+  /**
+   * **`user-confirmed` 在全系统只有一个产生点。**
+   *
+   * 权威由**写入通道**决定，不由内容声明决定（`docs/01:71`：条目不能靠声明
+   * 获得权威）。工具面写 `observed`，捕获写 `observed`，合并取最弱 ——
+   * 只有「人在 `memory_resolve` 里看过正文、按下 accept」这一次真实背书
+   * 才写 `user-confirmed`。
+   */
+  it('accept 把权威从 `observed` 抬到 `user-confirmed`', () => {
+    const definitions = strictTools()
+    remember(definitions)
+    const proposalId = readProposals(root)[0].id
+
+    resolveIt(definitions, { proposalId, action: 'accept', reason: '确认值得' })
+
+    const [entry] = readAll(root).entries
+    assert.equal(entry.authority, 'user-confirmed', '人签过字的记忆，权威必须留下痕迹')
+  })
+
+  it('reject 留档且不参与召回 —— 也就不产生 `user-confirmed`', () => {
     const definitions = strictTools()
     remember(definitions)
     const pending = readProposals(root)

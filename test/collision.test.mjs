@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 
-import { normalizeId } from '../lib/model.js'
+import { contentHash, normalizeId } from '../lib/model.js'
 import { clearStoreCache, readAll, writeEntry } from '../lib/store.js'
 
 let root
@@ -126,5 +126,30 @@ describe('writeEntry · lastVerifiedAt 三态', () => {
     const stamp = '2026-01-01T00:00:00.000Z'
     const written = writeEntry(root, entry({ lastVerifiedAt: stamp }))
     assert.equal(written.lastVerifiedAt, stamp)
+  })
+})
+
+/**
+ * `authority` 进 `contentHash` 的理由，和 0.1.1 把 `actionRisk` 补进去一样：
+ * **改了它就必须重建索引**。它落在快照 document 上、被 `renderRecall` 渲染给
+ * 模型看 —— 不重建的话，模型看到的还是旧权威。
+ *
+ * 哈希字段集变了，所以 `RECEIPT_HASH_VERSION` 从 2 升到 3，
+ * 旧回执报 `needs-reseed`（**不是** `tampered`）。
+ */
+describe('authority · 落盘与哈希', () => {
+  it('显式权威原样落盘、原样读回', () => {
+    writeEntry(root, entry({ authority: 'user-confirmed' }))
+    assert.equal(readAll(root).entries[0].authority, 'user-confirmed')
+  })
+
+  it('**contentHash 区分 authority** —— 否则改了它索引不重建', () => {
+    const observed = contentHash({ ...entry(), authority: 'observed' })
+    const confirmed = contentHash({ ...entry(), authority: 'user-confirmed' })
+    assert.notEqual(observed, confirmed)
+  })
+
+  it('缺省按 `observed` 进哈希（没写不等于可信）', () => {
+    assert.equal(contentHash(entry()), contentHash({ ...entry(), authority: 'observed' }))
   })
 })
