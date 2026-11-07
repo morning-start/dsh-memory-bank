@@ -26,12 +26,17 @@
   },
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./client/client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",
+    "./typert": "./lib/typert.host.js",
+    "./remote": "./lib/typert.remote-client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
+    "client",
+    "shared",
     "locale",
     "icon.svg",
     "cordis.patch.yml",
@@ -49,6 +54,16 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-api-remotes"
+      ]
     }
   }
 }
