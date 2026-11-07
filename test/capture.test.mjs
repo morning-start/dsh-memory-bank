@@ -341,3 +341,59 @@ describe('G1 归属门 · owner 目录由目录路由层推导', () => {
     assert.equal(verdict.detail.owner.ref, 'knowledge/ops.md')
   })
 })
+
+/**
+ * 判据 3：**回归测试已经编码的断言**。
+ *
+ * 这是本仓库第一次让 `docs/03` §G1 的判据 3 从 ❌ 变成 ✅。只取测试文件的
+ * **头部块注释** —— 那是作者刻意写下的不变量陈述。用例描述是**名字**不是断言，
+ * 整个文件做子串匹配会把测试数据、变量名、错误消息全算成 owner（那是噪声）。
+ * 实测三者：只看描述 **+0**、看头部注释 **+1**、两者都看 **+1**。
+ *
+ * 实测（`bench/g1-eval.mjs`）：A 组 **4/10 → 5/10**、B 组 **0/5 误伤**、
+ * 精度 **60.0% → 66.7%**。增益小，但方向正确且零误伤 —— 与「宁可漏报也不误伤」
+ * 的纪律一致。
+ */
+describe('G1 归属门 · 判据 3 测试索引', () => {
+  const TEST_HEADER =
+    '/**\n * 连接池上限：staging 部署健康检查超时先查 DB_POOL_MAX。\n */\n\nimport assert from "node:assert/strict"\n'
+
+  const seedTest = (name = 'pool.test.mjs') => {
+    mkdirSync(join(root, 'test'), { recursive: true })
+    writeFileSync(join(root, 'test', name), TEST_HEADER, 'utf8')
+  }
+
+  it('`test/*.test.mjs` 的头部注释进 owner，且 `kind=test`', () => {
+    seedTest()
+    const owners = collectOwners(root)
+    const entry = owners.find((owner) => owner.kind === 'test')
+    assert.ok(entry, `没读到 test/ 头部注释：${owners.map((owner) => owner.ref).join(', ')}`)
+    assert.equal(entry.ref, 'test/pool.test.mjs')
+  })
+
+  it('断言出现在测试头部 → `refuse(owned-elsewhere)`，`owner.kind` 是 test', () => {
+    seedTest()
+    const title = '连接池上限：staging 部署健康检查超时先查 DB_POOL_MAX'
+    const verdict = review(
+      {
+        id: 'staging_check_pool_cap',
+        title,
+        about: title,
+        kind: 'pitfall',
+        body: '# 功能名\nx\n# 生效条件\ny\n# 子功能\nz\n# 执行\nw\n# 验证方式\nv\n# 不适用条件\nu',
+        evidence: [{ kind: 'file', ref: 'src/a.ts' }],
+        provenance: 'measured',
+        scope: ['repo:x'],
+      },
+      { root, config: cfg, corpus: [], owners: collectOwners(root) },
+    )
+    assert.equal(verdict.decision, 'REJECT')
+    assert.equal(verdict.code, 'owned-elsewhere')
+    assert.equal(verdict.detail.owner.kind, 'test')
+  })
+
+  it('非 `.test.mjs`（如 `*.spec.mjs`）**不猜**', () => {
+    seedTest('pool.spec.mjs')
+    assert.ok(!collectOwners(root).some((owner) => owner.kind === 'test'))
+  })
+})
