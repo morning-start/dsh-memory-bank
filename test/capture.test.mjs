@@ -278,3 +278,66 @@ describe('后台重建', () => {
     assert.doesNotThrow(() => markDirty(join(root, 'nope')))
   })
 })
+
+/* ── G1 归属门：owner 目录不写死 ──────────────────────────────────── */
+
+/**
+ * 「事实文档放 `docs/`」是一条**规范**，不是一条保证 —— 保证来自 G1 归属门
+ * 真的读到了那份文档。
+ *
+ * 上一版 `OWNER_DIRS = ['docs']`，而目录路由层（`lib/routes.js`）认的是
+ * **所有**带 `.md` 的顶层目录。两份名单各写各的，后果很具体：
+ * 在 `knowledge/foo.md` 里写过一条断言，`memory_remember` 还能再记一遍 ——
+ * 两份副本开始漂移，而漂移正是 G1 存在的唯一理由（`docs/03` §G1）。
+ *
+ * 现在 owner 目录集合由 `routes.listDocFolders` 推导，建目录 + 放 `.md` 就够了，
+ * 不需要改两处代码。
+ */
+describe('G1 归属门 · owner 目录由目录路由层推导', () => {
+  /** 建一个自带文档目录的临时仓库。复用 `beforeEach` 的 `root`（每个用例全新）。 */
+  const seed = () => {
+    mkdirSync(join(root, 'knowledge'), { recursive: true })
+    mkdirSync(join(root, 'design'), { recursive: true })
+    mkdirSync(join(root, '.tmp-scratch'), { recursive: true })
+    writeFileSync(
+      join(root, 'knowledge', 'ops.md'),
+      '# 运维\n\nstaging 部署健康检查超时先查 DB_POOL_MAX 连接池上限。\n',
+      'utf8',
+    )
+    writeFileSync(join(root, 'design', 'arch.md'), '# 架构\n\n召回是五路融合。\n', 'utf8')
+    writeFileSync(join(root, '.tmp-scratch', 'notes.md'), '# 草稿\n\n召回是五路融合。\n', 'utf8')
+  }
+
+  it('`knowledge/` 与 `design/` 里的文档被当成 owner', () => {
+    seed()
+    const refs = collectOwners(root).map((owner) => owner.ref)
+    assert.ok(refs.includes('knowledge/ops.md'), `没读到 knowledge/，实际：${refs.join(', ')}`)
+    assert.ok(refs.includes('design/arch.md'), `没读到 design/，实际：${refs.join(', ')}`)
+  })
+
+  it('**点开头 / 构建产物目录不算** owner（否则就是全仓扫描）', () => {
+    seed()
+    const refs = collectOwners(root).map((owner) => owner.ref)
+    assert.ok(!refs.some((ref) => ref.startsWith('.')), `点目录被读进来了：${refs.join(', ')}`)
+  })
+
+  it('断言的 title 出现在 `knowledge/` 里 → refuse(owned-elsewhere)', () => {
+    seed()
+    const verdict = review(
+      {
+        id: 'staging_check_pool_cap',
+        title: 'staging 部署健康检查超时先查 DB_POOL_MAX 连接池上限',
+        kind: 'pitfall',
+        about: 'staging 部署健康检查超时先查 DB_POOL_MAX 连接池上限',
+        body: '# 功能名\nx\n# 生效条件\ny\n# 子功能\nz\n# 执行\nw\n# 验证方式\nv\n# 不适用条件\nu',
+        evidence: [{ kind: 'file', ref: 'src/a.ts' }],
+        provenance: 'measured',
+        scope: ['repo:x'],
+      },
+      { root, config: cfg, corpus: [], owners: collectOwners(root) },
+    )
+    assert.equal(verdict.decision, 'REJECT')
+    assert.equal(verdict.code, 'owned-elsewhere')
+    assert.equal(verdict.detail.owner.ref, 'knowledge/ops.md')
+  })
+})
