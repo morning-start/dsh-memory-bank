@@ -6,6 +6,43 @@
 
 ---
 
+## [0.3.7] - 2026-11-07
+
+> 这一版只改一件用户能看见的事：**面板不再「莫名其妙是 0」。**
+
+### Fixed · 面板显示 0 时，看不出是「没记忆」还是「读错了目录」
+
+**现象**：设置 → 记忆 面板稳定显示 `0 活跃 / 0 待决 / 0/200 配额`，而同一个 profile 在别的仓库里
+能显示 17 / 23 条。
+
+**根因**（`lib/root.js` 的兜底分支）：面板面拿不到 live Agent，`resolveRoot()` 只有
+「最近一次会话解析结果」（memo）。memo 没建立时落到 `process.cwd()` —— 在桌面宿主里那是
+**应用安装目录**，那里当然没有 `.dsh-memory/`，于是读出来是空，**而界面上没有任何一行
+告诉你它读的是哪个目录**。0 到底是「这个仓库还没有记忆」还是「读错了地方」，无从判断。
+
+**修法**：把「根从哪来」一路透出到界面。
+
+- `lib/index.js:98` —— `resolveRoot.source = () => rootResolver.source`（`config` / `env` /
+  `session` / `header` / `memo` / `fallback`）。
+- `lib/host/service.js:180` —— 新增 `rootSource()`；`overview()` 的返回值多一个 `rootSource`
+  （`root` 本来就有，只是界面没用）。
+- `client/views/memory.js:274` —— 标题下面显示**面板实际读的目录**；来源是 `fallback` 时
+  额外挂一个红色警告条 `rootFallbackHint`。
+
+### 实测
+
+```
+npm test                    552 条（0 fail / 0 skip）
+scripts/check.mjs           72 文件语法 / 2 目录路由 / 死导出 0
+```
+
+### 另一个「0」不是 bug
+
+`E:\Workplace\extension\dsh-memory-bank` 本身没有 `.dsh-memory/` —— 这个仓库一条记忆都没写过。
+同机对照：`my_tube` 17 条 / `noval-studio` 23 条 / `dsh-myteam` 13 条。面板对它们返回的是真数字。
+
+---
+
 ## [0.3.6] - 2026-11-07
 
 > 这一版修掉最后一个已知判据偏差：**`actionRiskOf` 的中英文不对称。**

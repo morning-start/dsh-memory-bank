@@ -143,6 +143,9 @@ const en = {
   'health.inbox': 'queued {count}',
   'health.problems': 'bad files {count}',
   panelSub: 'Health and pending queue of the memory bank for this repository.',
+  rootFallback: 'wrong directory',
+  rootFallbackHint:
+    'The panel has no session working directory, so it reads the process cwd — that is not your repository and will always be empty. Run one tool call in the session, or set DSH_MEMORY_ROOT.',
 
   // ---- 记忆面板：tab ----
   'tab.pending': 'Pending',
@@ -337,6 +340,9 @@ const zh = {
   'health.inbox': '队列 {count}',
   'health.problems': '坏文件 {count}',
   panelSub: '本仓库记忆库的健康度与待决队列。',
+  rootFallback: '读的不是这个仓库',
+  rootFallbackHint:
+    '面板没拿到会话工作目录，读的是进程 cwd —— 那个目录里不会有你的记忆，所以永远是 0。在会话里跑一次工具，或设 DSH_MEMORY_ROOT。',
 
   // ---- 记忆面板：tab ----
   'tab.pending': '待决',
@@ -1318,6 +1324,26 @@ const CSS = `
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
+}
+
+/* 面板读的是哪个目录 —— 0 到底是「没记忆」还是「读错了地方」。 */
+.mb-panel__root {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.mb-panel__rootPath {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+  font-family: "SF Mono", "JetBrains Mono", "Fira Code", Consolas, Menlo, monospace;
+  font-size: 12px;
 }
 
 .mb-panel__error {
@@ -3518,6 +3544,20 @@ function MemorySection(props) {
         { className: 'mb-panel__headMain' },
         h('h2', { className: 'mb-panel__title' }, t('panelTitle')),
         h('p', { className: 'mb-panel__sub' }, t('panelSub')),
+        state.overview?.root
+          ? h(
+              'p',
+              { className: 'mb-panel__root' },
+              h('span', { className: 'mb-panel__rootPath' }, state.overview.root),
+              state.overview.rootSource === 'fallback'
+                ? h(
+                    'span',
+                    { className: 'mb-badge mb-badge--warn', title: t('rootFallbackHint') },
+                    t('rootFallback'),
+                  )
+                : null,
+            )
+          : null,
       ),
       h(
         'button',
@@ -3543,6 +3583,7 @@ function MemorySection(props) {
       ),
     ),
     state.notice === null ? null : h(Note, { tone: 'error' }, state.notice.text),
+    state.overview?.rootSource === 'fallback' ? h(Note, { tone: 'error' }, t('rootFallbackHint')) : null,
     state.status === 'loading'
       ? h(EmptyState, { title: t('loading') })
       : state.status === 'error'

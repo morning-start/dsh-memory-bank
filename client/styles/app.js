@@ -889,6 +889,26 @@ const CSS = `
   line-height: 18px;
 }
 
+/* 面板读的是哪个目录 —— 0 到底是「没记忆」还是「读错了地方」。 */
+.mb-panel__root {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.mb-panel__rootPath {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+  font-family: "SF Mono", "JetBrains Mono", "Fira Code", Consolas, Menlo, monospace;
+  font-size: 12px;
+}
+
 .mb-panel__error {
   display: flex;
   flex-direction: column;

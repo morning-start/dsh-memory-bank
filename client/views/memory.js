@@ -270,6 +270,20 @@ function MemorySection(props) {
         { className: 'mb-panel__headMain' },
         h('h2', { className: 'mb-panel__title' }, t('panelTitle')),
         h('p', { className: 'mb-panel__sub' }, t('panelSub')),
+        state.overview?.root
+          ? h(
+              'p',
+              { className: 'mb-panel__root' },
+              h('span', { className: 'mb-panel__rootPath' }, state.overview.root),
+              state.overview.rootSource === 'fallback'
+                ? h(
+                    'span',
+                    { className: 'mb-badge mb-badge--warn', title: t('rootFallbackHint') },
+                    t('rootFallback'),
+                  )
+                : null,
+            )
+          : null,
       ),
       h(
         'button',
@@ -295,6 +309,7 @@ function MemorySection(props) {
       ),
     ),
     state.notice === null ? null : h(Note, { tone: 'error' }, state.notice.text),
+    state.overview?.rootSource === 'fallback' ? h(Note, { tone: 'error' }, t('rootFallbackHint')) : null,
     state.status === 'loading'
       ? h(EmptyState, { title: t('loading') })
       : state.status === 'error'

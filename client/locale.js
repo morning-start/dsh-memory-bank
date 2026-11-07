@@ -133,6 +133,9 @@ const en = {
   'health.inbox': 'queued {count}',
   'health.problems': 'bad files {count}',
   panelSub: 'Health and pending queue of the memory bank for this repository.',
+  rootFallback: 'wrong directory',
+  rootFallbackHint:
+    'The panel has no session working directory, so it reads the process cwd — that is not your repository and will always be empty. Run one tool call in the session, or set DSH_MEMORY_ROOT.',
 
   // ---- 记忆面板：tab ----
   'tab.pending': 'Pending',
@@ -327,6 +330,9 @@ const zh = {
   'health.inbox': '队列 {count}',
   'health.problems': '坏文件 {count}',
   panelSub: '本仓库记忆库的健康度与待决队列。',
+  rootFallback: '读的不是这个仓库',
+  rootFallbackHint:
+    '面板没拿到会话工作目录，读的是进程 cwd —— 那个目录里不会有你的记忆，所以永远是 0。在会话里跑一次工具，或设 DSH_MEMORY_ROOT。',
 
   // ---- 记忆面板：tab ----
   'tab.pending': '待决',
