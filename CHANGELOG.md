@@ -6,6 +6,51 @@
 
 ---
 
+## [0.3.6] - 2026-11-07
+
+> 这一版修掉最后一个已知判据偏差：**`actionRiskOf` 的中英文不对称。**
+
+### Fixed · 同一个意思，中文记忆被判得更高危
+
+- **根因**：`DESTRUCTIVE` / `EXTERNAL` / `SECURITY` 对英文用 `\b...\b`，
+  中文用裸 alternation。于是 `deployment` / `deleted` / `published` 全部**不命中**
+  （词尾被 `\b` 挡住），而 `部署` / `删除` / `发布` **任意位置命中**。
+- **实测**：
+
+  ```
+  "staging deployment health check timeout"  -> R1
+  "staging 部署健康检查超时"                  -> R4
+  ```
+
+  `actionRisk` 决定「⚠ 照做之前回读原文」这行警告、决定推广包里的风险标注、
+  还进 `contentHash`。**一个语言比另一个语言更容易拿到警告，是偏差不是风格。**
+- **修法**：英文**显式列形态**（`deployment` / `deployed` / `deleting` /
+  `deletion` / `removal` / `destruction` …），不是 `stem\w*`。
+  后者会误伤：`tokenize` / `tokenizer` 命中 SECURITY 于是一条讲分词器的记忆
+  变成「涉密」。**宁可长，不可猜。** 刻意收窄的还有 `sent`（英文里太常见的动词）。
+- **中文保持「出现即命中」，并且这是安全的那一侧。**
+  `部署健康检查超时` 里的「部署」是在描述**被排查的对象**，不是指示不可逆动作 ——
+  要判对只能靠语义，而语义通道实测分离度 −0.020 ~ +0.063（不可用）。
+  `actionRisk` 的后果是多一行警告，不是拦截：**少警告是 unsafe，多警告是 noisy。**
+  这个取舍被 `test/risk.test.mjs` 的「已知误报（刻意保留）」钉住。
+- **不需要迁移**：`actionRisk` 确实进 `contentHash`，但存量条目存的是**当时算出
+  的值**，不会被重算 —— 只有新写入的条目按新规则算。所以不用升
+  `RECEIPT_HASH_VERSION`。
+- **回归**：`test/risk.test.mjs` 11 条（中英同判 / 16 个屈折形式 / 3 个假阳性
+  护栏 / 五档 / 免责声明不降级 / 已知误报）。
+
+### 实测
+
+```
+npm test                    541 → 552 条（+11，新增 test/risk.test.mjs）
+scripts/check.mjs           72 文件 / 2 目录路由 / 死导出 0
+scripts/doctor.mjs          10 项通过
+bench/acceptance.mjs        7/7 · 33 个模块零网络
+build-client --check        114767 字节一致
+```
+
+---
+
 ## [0.3.5] - 2026-11-07
 
 > 这一版补上 **G1 判据 3（回归测试已编码该断言）**，`docs/03` §G1 的表格里

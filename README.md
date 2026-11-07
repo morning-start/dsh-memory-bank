@@ -138,8 +138,8 @@ Agent 调 `memory_remember`，十道门跑完：
 
 | | |
 |---|---|
-| 版本 | **0.3.5**（G1 判据 3：回归测试的头部注释也是 owner，精度 60% → 66.7%） |
-| 测试 | **541 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 15 条接线测试） |
+| 版本 | **0.3.6**（`actionRiskOf` 中英同判：`deployment` 不再漏判，`tokenize` 不误伤） |
+| 测试 | **552 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 15 条接线测试） |
 | 验收 | 设计文档 §14 的 7 条**全部通过**（`node bench/acceptance.mjs`） |
 | 基准 | G1 真阳性 **5/10** · 假阳性 **0/5** · 完整协议 **10/15** · 精度 **66.7%**；语义分离 **−0.139**（不可分离，见 `bench/embedding-experiment.mjs`） |
 | 规模 | **33** 个服务端模块 + 浏览器端 `client/` · 约 420 KB |
