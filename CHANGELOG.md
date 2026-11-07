@@ -93,6 +93,27 @@ node bench/g1-eval.mjs                 # 判据未变（真阳性 4/10 · 假阳
   只扫顶层，`lib/config/` 的 6 个模块**一条都没被语法检查过**（37 → 60 个文件）。
   两处都改成递归 —— 这正是它们自己想防的那类「加了东西但检查数字没变」。
 
+### 一个差点成为 P0 的部署缺陷
+
+面板服务**不能**用顶层静态 import 挂在插件入口上：
+
+```js
+import { MemoryBankService } from './host/service.js'   // ← 会连工具面一起拖死
+```
+
+`lib/host/service.js` → `@deepseek-ai/dsh-typert-protocol` → `@deepseek-ai/cordis`。
+这两个包**不在** `~/.dsh/profiles/desktop/node_modules/@deepseek-ai/` 下（本机实测：
+只有 `schemastery` 在）。能不能解析，取决于宿主是否注入 resolver —— **仓库里证明不了**。
+
+静态 import 失败 = 插件加载失败 = 7 个工具全没。为了一个人机入口。
+
+修法：`ctx.effect` 里动态 `import()` + `catch`，失败降级成「只有工具面」并打出原因。
+**已实测**：把 `dsh-typert-protocol` 的 junction 改名后，`test/plugin.test.mjs`
+仍然 12/12 通过。
+
+> 通用规则：**可选能力永远不许用静态 import 挂在插件入口上。**
+
+
 ### Known gaps
 
 - **视觉未验证**：没有浏览器控制，只证明了结构、文案、props 与三次注册。
