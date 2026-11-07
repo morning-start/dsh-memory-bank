@@ -45,6 +45,7 @@
   "scripts": {
     "test": "node --test \"test/*.test.mjs\"",
     "check": "node scripts/check.mjs",
+    "doctor": "node scripts/doctor.mjs",
     "bench": "node bench/assembly.mjs && node bench/capture.mjs && node bench/g1-eval.mjs",
     "acceptance": "node bench/acceptance.mjs"
   },

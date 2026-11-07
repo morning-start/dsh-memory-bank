@@ -83,16 +83,6 @@ export const METHODS = Object.freeze([
 ])
 
 /**
- * 线上方法名。客户端用 `ctx.remote.memoryBank[method]` 调。
- *
- * @param {string} method
- * @returns {string} `<namespace>/<method>`
- */
-export function wireName(method) {
-  return `${NAMESPACE}/${method}`
-}
-
-/**
  * 配置层的名字。界面上的来源徽标直接用它，**不要在组件里再写一份中英对照**。
  * @type {ReadonlyArray<{ id: string, zh: string, en: string, tone: string }>}
  */
