@@ -124,7 +124,17 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('插件行接线', { skip: peerMissing ? '@deepseek-ai/schemastery 未安装（需要 DSH profile）' : false }, () => {
+describe(
+  '插件行接线',
+  {
+    skip: peerMissing
+      ? '@deepseek-ai/schemastery 未解析 —— 这 12 条**永远不会跑**。修法（Windows）：\n' +
+        '  mkdir node_modules\\@deepseek-ai\n' +
+        '  cmd /c mklink /J "node_modules\\@deepseek-ai\\schemastery" "%USERPROFILE%\\.dsh\\profiles\\desktop\\node_modules\\@deepseek-ai\\schemastery"\n' +
+        '（`node_modules/` 已在 .gitignore 里，不会进仓库。）'
+      : false,
+  },
+  () => {
   it('注册 7 个工具，名字与 output 契约正确', () => {
     apply(ctx, {})
 

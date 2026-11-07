@@ -138,14 +138,14 @@ Agent 调 `memory_remember`，十道门跑完：
 | | |
 |---|---|
 | 版本 | **0.1.1**（patch） |
-| 测试 | **274 条**，`node --test "test/*.test.mjs"` |
+| 测试 | **286 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则 274 条、12 条接线测试 skip） |
 | 验收 | 设计文档 §14 的 7 条**全部通过**（`node bench/acceptance.mjs`） |
 | 基准 | G1 真阳性 **4/10** · 完整协议 **9/15** · 精度 **60.0%**；语义分离 **−0.020 ~ +0.063**（抖动，不够开闸） |
 | 规模 | 19 个模块 · 约 350 KB |
 | 依赖 | 仅 `@deepseek-ai/schemastery`（peer） |
 
 ```bash
-npm test                      # 274 条单测
+npm test                      # 286 条单测（需先链接 peer，见 docs/07 §5）
 node bench/acceptance.mjs     # 验收 7 条
 node bench/g1-eval.mjs        # G1 拿本仓库自己的文档实测
 node bench/assembly.mjs       # 装配路径基准

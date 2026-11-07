@@ -1,4 +1,4 @@
-# 变更日志
+﻿# 变更日志
 
 本文件格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
@@ -14,13 +14,13 @@
 > 那 196 条**恰好测不到接线层** —— `test/plugin.test.mjs` 整组因为缺 peer 依赖被 **skip**，
 > 而它断言的工具数还是 6（实际 7）。**唯一覆盖 `apply()` 接线的测试从来没有跑过。**
 >
-> 这一版修掉 **17 个 P0/P1 级缺陷**，测试 **196 → 274**（+78），
+> 这一版修掉 **17 个 P0/P1 级缺陷**，测试 **196 → 286**（+90），
 > 其中新建的 `test/wiring.test.mjs`（10 条）**不依赖 peer、永远会跑**，专门锁住那三个漏网的接线 bug。
 
 ### 怎么自己验一遍
 
 ```bash
-node --test "test/*.test.mjs"          # 274 tests / 274 pass / 0 fail / 0 skipped
+node --test "test/*.test.mjs"          # 286 tests / 286 pass / 0 fail / 0 skipped
 node scripts/check.mjs                 # 37 个文件语法通过
 node bench/acceptance.mjs              # 7 / 7 通过
 node bench/g1-eval.mjs                 # 真阳性 4/10 · 假阳性 0/5 · 改写漏报 5/5 · 完整协议 9/15
@@ -163,7 +163,7 @@ node bench/capture.mjs                 # 旧 89–113 ms · turn-stopping 2.4–
 
 ### Changed
 
-- **测试口径**：196 → **274**（+78）。`test/plugin.test.mjs` 从「整组 skip」恢复为**真实执行**（12 条），并修正工具清单 6 → **7**（多了 `memory_promote`）。
+- **测试口径**：196 → **286**（+90）。`test/plugin.test.mjs` 从「整组 skip」恢复为**真实执行**（12 条），并修正工具清单 6 → **7**（多了 `memory_promote`）。
 - **`locale/zh.json` / `locale/en.json`**：「八道门 / eight gates」→「**十道门 / ten gates**」（`G1 G2 G2b G3 G3b G4 G5 G6 G7 G8`，其中 `HARD_GATES` 7 个：`G1 G2 G3 G3b G4 G5 G7`）。
 - **文档全面对齐实测**：
   - G1 从「逐字 10/10 · 完整协议 15/15」改成 **真阳性 4/10 · 完整协议 9/15 · 精度 60.0%**；
