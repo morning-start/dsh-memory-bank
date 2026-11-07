@@ -9,8 +9,9 @@
  * 客户端拿不到这个模块 —— `client/client.js` 是 `window.__ModuleLoader__`
  * 加载**自包含脚本**，`require` 只能解析平台种子表里的包，不能 `import './x.js'`。
  * 所以客户端里必然有一份字符串副本。防漂移的办法不是「记得同步」，
- * 而是 `test/endpoints.test.mjs`：它逐条比对这里的常量和 `client/client.js`
- * 里的字面量，**少一条就红**。
+ * 而是 `test/client.test.mjs` 的「与 `shared/` 的防漂移」三组断言：它逐条比对
+ * `GATE_HINTS` / `SOURCES` / 每一个 `memoryBank.*` 调用与这里的常量，
+ * **少一条就红**。
  *
  * ## 命名规则（已从宿主源码坐实）
  *

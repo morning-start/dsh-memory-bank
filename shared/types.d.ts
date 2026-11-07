@@ -96,10 +96,21 @@ export interface PendingProposal {
   readonly title: string
   readonly confidence: string | null
   readonly actionRisk: string | null
-  /** 判不了的门 id 列表（`G1`…`G8`）。 */
+  /** 判不了的门 id 列表（`G1`…`G8`，含 `G2b` / `G3b`）。 */
   readonly gates: readonly string[]
   readonly why: readonly string[]
   readonly createdAt: string | null
+}
+
+/**
+ * `memoryBank/pending` 的返回。
+ *
+ * **不是数组。** `total` 是裁剪前的总数，`items` 是这一页 —— 界面要能说
+ * 「还有 12 条」，而不只是把 `items.length` 当成全部。
+ */
+export interface PendingPage {
+  readonly total: number
+  readonly items: readonly PendingProposal[]
 }
 
 /** 记忆条目（列表用，正文不进列表）。 */
@@ -125,19 +136,49 @@ export interface DriftItem {
   readonly anchors: readonly string[]
 }
 
+/**
+ * `memoryBank/drift` 的返回。
+ *
+ * **不是数组**，是三个桶 + 一个总数。`notADefinition`（锚点落在注释 / 字符串 /
+ * 调用处）在协议里**没有第四个桶**，归 `quarantined` 计数，但保留独立数组 ——
+ * 界面可以单独点名它，`memory_audit` 也是这么做的。
+ */
+export interface DriftReport {
+  readonly quarantined: readonly DriftItem[]
+  readonly advisory: readonly DriftItem[]
+  readonly unsafePath: readonly DriftItem[]
+  readonly notADefinition: readonly DriftItem[]
+  readonly counts: {
+    readonly quarantined: number
+    readonly advisory: number
+    readonly unsafePath: number
+    readonly notADefinition: number
+  }
+  /** 复查过的锚点总数 —— 空态文案要写「锚点全部健康（N 条）」。 */
+  readonly checked: number
+  readonly unverifiable: number
+  readonly at: string
+}
+
 export interface ClaimStats {
   readonly open: number
   readonly openActionable: number
+  /** `open` 的子集，**不要**再加进 `total`（会重复计数）。 */
   readonly contradicted: number
   readonly unverified: number
   readonly resolved: number
   readonly total: number
 }
 
-/** 审计时间线上的一条。只读。 */
+/**
+ * 审计时间线上的一条。只读。
+ *
+ * `kind` **原样透出**：`lib/host/queries.js` 不裁剪未知类型 ——
+ * 宁可类型不完美，也不要静默丢掉一条记录。
+ */
 export interface LedgerEntry {
   readonly at: string
-  readonly kind: 'attempt' | 'resolve' | 'dream-accept' | 'discard'
+  readonly kind: 'attempt' | 'resolve' | 'dream-accept' | 'forget' | 'quota-transition' | 'consolidate' | string
   readonly id: string | null
   readonly proposalId: string | null
   readonly decision: string | null

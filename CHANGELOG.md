@@ -1,8 +1,109 @@
-﻿# 变更日志
+# 变更日志
 
 本文件格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
 每条都带**可复核的锚点**：`lib/文件:行` 或锁住它的测试名。数字来自本机实测（命令写在条目里）。
+
+---
+
+## [0.2.0] - 2026-11-07
+
+> **配置面从 yaml / 环境变量搬进人机界面。**
+>
+> 0.1.1 修掉的三个配置缺陷（环境变量全死、默认值遮蔽、`config.json` 不读）
+> 本质是同一件事：**作用域不可见**。这一版先补上「配置的第三、第四层」，
+> 再把四层画出来 —— 每个字段右侧一个来源徽标，从上面来的层改不动就是灰的。
+>
+> 顺带修了**两个静默的数据丢失**（见下面「顺带修的两个静默缺陷」），
+> 那两个都不是新代码引入的，是一直在那儿、只是没人跑过对应路径。
+
+### 怎么自己验一遍
+
+```bash
+node --test "test/*.test.mjs"          # 385 tests / 385 pass / 0 fail / 0 skipped
+node scripts/check.mjs                 # 60 个文件语法通过（递归扫 lib 与 client、shared）
+node scripts/build-client.mjs --check  # 签入的 client/client.js 与一次全新构建逐字节一致
+node bench/acceptance.mjs              # 7 / 7 通过
+node bench/g1-eval.mjs                 # 判据未变（真阳性 4/10 · 假阳性 0/5 …）
+```
+
+### Added · 配置域（P0）
+
+- **`lib/config/` 六个模块**（`schema` / `defaults` / `layers` / `project` / `migrate` / `index`）。
+  `Config` 从 `lib/index.js` 搬出，成为**单一事实源**；host 与测试都从这里取。
+- **四层合并**：`默认 → 项目 → 环境 → 行 config`（ADR-001）。
+  `sourceOf(layers, path)` 回答「这个值从哪一层来」—— 这是界面画来源徽标的唯一入口。
+- **项目层真的能读能写**：`<repo>/.dsh-memory/config.json`。
+  坏 JSON 降级为默认值**并报 `problems`**，不静默；写错的键名也报出来。
+  只接受四个仓库属性（`capture` / `quota` / `template` / `safety`），
+  其余字段会被裁掉并报出 —— 「看起来生效、实际被更高的层盖住」比报错更糟。
+- **热重载**：`cfg` 闭包 → `createConfigSource({ get(root) })`，按 `mtime:size` 失效。
+  7 个工具 + 2 个钩子 + 1 个命令全部改成按 root 现取，**保存即生效，不用重启宿主**。
+- **`schemaVersion` 迁移表**（`lib/config/migrate.js`，v1 起步）。版本**高于**本插件时
+  不猜：原样保留 + 报问题。
+
+### Added · 面板服务（`lib/host/`）
+
+- `service.js` —— `MemoryBankService extends TypertRemoteService`，命名空间 `memoryBank`，
+  17 个薄 async 方法。**只做路由，不写业务。**
+- `queries.js` —— 8 个只读查询，全部复用 `store` / `claims` / `drift` / `lifecycle` /
+  `index-build` 的现有实现，**一行过滤条件都没重写**。
+- `mutations.js` —— 9 个写操作，统一 `MutationResult`。
+  `forget` 在存在性检查**之前**校验 `confirm === true`。
+- `guards.js` —— 按 root 的写锁、revision 乐观并发、异步写操作拒绝
+  （防止将来有人给 mutation 加 `await` 而锁静默失效）。
+- **`lib/command.js` 薄壳化**：面板的 `accept` 与 `/memory accept` 现在调**同一个函数**。
+  0.1.1 刚修完「`gateQuota` 用黑名单、`activeEntries` 用白名单」那一类双实现漂移，
+  不要在 UI 层再生一对。
+
+### Added · 浏览器端（`client/`）
+
+- 三块界面 + 一个抽屉：插件卡片（`plugins.item`）、配置页（`plugins.row.config`）、
+  记忆面板（`settings.section`）、项目配置抽屉。
+- `client/client.js` 是**签入的构建产物**，由 `scripts/build-client.mjs`
+  从 `client/*.js` 确定性拼接；`--check` 模式保证它与源码一致。
+- **零构建、零依赖**：`require` 只碰平台种子表里的 `react`。
+- 样式全部走 `--dsw-alias-*` token，类名带 `mb-` 前缀（`practices.md:35`），
+  `<style>` 在 **factory 的同步窗口**里注入（晚一步就不会被 `claimStyles` 认领，
+  卸载后样式留在页面上）。
+
+### Changed · 设计文档返工（`docs/07` §2.9）
+
+实施前对着宿主源码逐条复核，推翻了三条「听起来对、照做会静默失败」的结论：
+
+1. **`main` 槽不是「注册就劫持」** —— `replaceRisk: shadows-shipped-ui` 只对
+   **已被占用的 key**（`conversation`）生效，新 key 是纯加法
+   （`cordis-client-runner/lib/client.js:4370-4396`）。结论不变（仍用
+   `settings.section`），但理由从「安全约束」改成「产品判断」。
+2. **`require('@deepseek-ai/*')` 不是禁止** —— 5 个包是种子词，零声明可用
+   （`dsh-web-frontend/dist/assets/index-BXV-oxvX.js:919724`）。仍手写控件，
+   因为 `practices.md:35` 是**策略**（版本静默变 + 没有类型检查），不是平台限制。
+3. **RPC 不是「零 codegen」** —— 这是过度乐观：生成产物 / `exports` /
+   `dsh.client.inject` 三环缺一不可。好在产物是纯数据，可以手写。
+
+### 顺带修的两个静默缺陷
+
+- **`schemastery` 把「没提供的数组」物化成 `[]`**：`template: []` 会让 G2 对
+  **每一条**记忆 refuse，`capture.signals: []` 让自动捕获**永不触发** ——
+  全程零报错。修法：`lib/config/layers.js` 的 `pruneMaterialized` 在合并前裁掉
+  物化出来的空容器。回归：`test/config.test.mjs` 的「宿主交进来的解析值不会
+  静默清空默认值」。
+- **两条「扫目录」的检查只扫顶层**：`bench/acceptance.mjs` 第 7 条（零网络调用）
+  完全没扫到 `lib/config/` 子目录（19 → 24 个模块）；`scripts/check.mjs` 同样
+  只扫顶层，`lib/config/` 的 6 个模块**一条都没被语法检查过**（37 → 60 个文件）。
+  两处都改成递归 —— 这正是它们自己想防的那类「加了东西但检查数字没变」。
+
+### Known gaps
+
+- **视觉未验证**：没有浏览器控制，只证明了结构、文案、props 与三次注册。
+  布局数值（960 / 612 / 440px）、对比度、`--dsw-alias-*` 是否全部解析、
+  sticky 保存条在插件详情页底色上是否读得清 —— 都未实测。
+- **端到端 RPC 未验证**：验证到「网关 `resolveSrcDescriptor` 能解析出全部 17 个
+  端点 + 参数名与契约一致」，再往下需要 live Cordis 应用。
+- **`memory_resolve` 工具面仍是第三份裁决实现**：`lib/tools.js` 的
+  `memory_resolve` 还没有收敛到 `lib/host/mutations.js`。docs/07 只要求
+  「面板 == 命令」，已满足；这是下一个该收敛的点。
+- **`shared/types.d.ts` 是手写的**：没有从实现生成，靠 review 保持一致。
 
 ---
 

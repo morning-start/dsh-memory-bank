@@ -31,11 +31,19 @@ let peerMissing = false
 try {
   ;({ apply, Config } = await import('../lib/index.js'))
 } catch (error) {
-  if (error?.code === 'ERR_MODULE_NOT_FOUND' && String(error.message).includes('schemastery')) {
-    peerMissing = true
-  } else {
-    throw error
-  }
+  // 缺任何**随 dsh 发布**的 peer 都跳过这一组。
+  //
+  // 0.1.1 时这里只认 `schemastery`，因为 `lib/index.js` 只静态依赖它。
+  // 0.2.0 加了面板服务（`lib/host/service.js` → `@deepseek-ai/dsh-typert-protocol`
+  // → `@deepseek-ai/cordis`），于是「只链接 schemastery」的仓库会在这里
+  // **抛错而不是跳过** —— 那等于让「没装宿主依赖」变成红灯。
+  // 这三个包都由 dsh 安装提供，仓库里靠 junction 解析（`docs/07` §5 第 0 步）。
+  const message = String(error?.message ?? '')
+  const missingPeer =
+    error?.code === 'ERR_MODULE_NOT_FOUND' &&
+    /@deepseek-ai\/(schemastery|dsh-typert-protocol|cordis)|'zod'/.test(message)
+  if (!missingPeer) throw error
+  peerMissing = true
 }
 
 let root
