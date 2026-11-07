@@ -296,6 +296,88 @@ describe('now 透传', () => {
   })
 })
 
+/* ── 常驻层（pinned） ────────────────────────────────────────────── */
+
+describe('常驻层', () => {
+  const pinnedEntry = (id, overrides = {}) =>
+    entry(id, { pinned: true, title: `常驻 ${id}`, about: `长期约束 ${id}`, ...overrides })
+
+  it('查询打不中时 pinned 仍然在场（这是它存在的全部理由）', () => {
+    const snapshot = snapshotOf(pinnedEntry('redis_dep'))
+    const envelope = recall('完全无关的查询词', snapshot, { config: CONFIG })
+
+    assert.equal(envelope.delivery.tier, 'abstain', '查询确实没命中')
+    assert.equal(envelope.pinned.length, 1, 'pinned 被查询结果连坐了')
+    assert.equal(envelope.pinned[0].memoryId, 'redis_dep')
+
+    const rendered = renderRecall(envelope)
+    assert.match(rendered, /常驻（pinned）/, 'abstain 时 pinned 段被吞了')
+    assert.match(rendered, /redis_dep\.md/, 'pinned 条目没给路径')
+    assert.match(rendered, /没有召回/, 'abstain 的结论仍然要说')
+  })
+
+  it('pinned 是**加性**的，不占 limit 名额', () => {
+    const snapshot = snapshotOf(
+      pinnedEntry('redis_dep'),
+      entry('pool_cap', { title: '连接池上限排查', about: 'staging 健康检查超时' }),
+    )
+    const envelope = recall('连接池上限排查', snapshot, { config: CONFIG, limit: 1 })
+
+    assert.equal(envelope.delivery.tier, 'content')
+    assert.equal(envelope.results.length, 1, 'limit=1 只该给一条查询结果')
+    assert.equal(envelope.pinned.length, 1, 'pinned 另算，没有挤掉查询结果')
+    assert.equal(envelope.pinned[0].memoryId, 'redis_dep')
+  })
+
+  it('非 active/advisory 的 pinned 不注入（白名单，不是黑名单）', () => {
+    const snapshot = snapshotOf(
+      pinnedEntry('a', { status: 'active' }),
+      pinnedEntry('b', { status: 'stale' }),
+      pinnedEntry('c', { status: 'deprecated' }),
+    )
+    const envelope = recall('无关', snapshot, { config: CONFIG })
+    assert.deepEqual(
+      envelope.pinned.map((item) => item.memoryId),
+      ['a'],
+      '`stale` 只该给指针，不该进常驻注入',
+    )
+  })
+
+  it('过期的 pinned 不注入（「常驻」不等于「永久」）', () => {
+    const snapshot = snapshotOf(
+      pinnedEntry('alive', { expiresAt: '2030-01-01T00:00:00Z' }),
+      pinnedEntry('dead', { expiresAt: '2020-01-01T00:00:00Z' }),
+    )
+    const envelope = recall('无关', snapshot, { config: CONFIG, now: () => Date.parse('2026-01-01T00:00:00Z') })
+    assert.deepEqual(envelope.pinned.map((item) => item.memoryId), ['alive'])
+  })
+
+  it('`maxPinned: 0` 关掉常驻层（可配置的逃生阀）', () => {
+    const snapshot = snapshotOf(pinnedEntry('redis_dep'))
+    const envelope = recall('无关', snapshot, { config: { ...CONFIG, recall: { maxPinned: 0 } } })
+    assert.deepEqual(envelope.pinned, [])
+  })
+
+  it('excludeIds 对 pinned 同样生效（同一条不能既被排除又被注入）', () => {
+    const snapshot = snapshotOf(pinnedEntry('redis_dep'))
+    const envelope = recall('无关', snapshot, { config: CONFIG, excludeIds: ['redis_dep'] })
+    assert.deepEqual(envelope.pinned, [])
+  })
+
+  it('abstain 兜底提示可覆盖，且默认不编造路径', () => {
+    const snapshot = snapshotOf(entry('pool_cap', { title: '连接池上限排查', about: 'staging 健康检查超时' }))
+
+    const withHint = renderRecall(recall('完全无关的查询词', snapshot, { config: CONFIG }), {
+      fallbackHint: '> 兜底：先读 `docs/README.md`。',
+    })
+    assert.match(withHint, /docs\/README\.md/)
+
+    const without = renderRecall(recall('完全无关的查询词', snapshot, { config: CONFIG }))
+    assert.match(without, /兜底/, 'abstain 必须给下一步，不能只说「没找到」')
+    assert.match(without, /glob/, '默认兜底指向确定性动作')
+  })
+})
+
 /* ── 排序常量 ─────────────────────────────────────────────────────── */
 
 describe('排序常量', () => {

@@ -2,7 +2,7 @@
  * 接线冒烟：用假 ctx 跑一遍 `apply`，确认
  *   - 7 个工具注册（名字、schema 形状、output 声明）
  *   - 1 个 systemPrompt.context（order 130、required:false）
- *   - 2 个事件监听器
+ *   - 3 个事件监听器（session/event · agent/turn-stopping · tools/pre-execute）
  *   - disposer 全部可调用（卸载不留残留）
  *
  * 这一层不碰 DSH 运行时，只钉住「插件行自己没写错」。
@@ -167,6 +167,67 @@ describe(
     }
   })
 
+  it('memory_audit 暴露 `routes` 开关（目录 README 路由层）', () => {
+    apply(ctx, {})
+    const audit = ctx._tools.find((tool) => tool.name === 'memory_audit')
+    assert.ok(audit, '找不到 memory_audit')
+    assert.ok(
+      audit.parameters.properties?.routes,
+      '`routes` 不在 schema 里 —— 那么 `memory_audit --routes` 在宿主面上不可达，' +
+        '正是 `docs/09` §4 说的「机制写了，但真实调用路径上不生效」',
+    )
+    assert.equal(audit.parameters.properties.routes.type, 'boolean')
+    assert.ok(
+      /路由|README/.test(audit.description),
+      '描述里没提路由层 —— 模型不会知道有这个开关',
+    )
+  })
+
+  it('memory_audit --routes 真的跑路由检查（不是只有 schema 没有实现）', async () => {
+    apply(ctx, {})
+    const audit = ctx._tools.find((tool) => tool.name === 'memory_audit')
+    // 临时仓库里没有任何文档目录 —— 报告要说「0 个目录」，而不是崩。
+    const result = await audit.execute(
+      { routes: true },
+      { signal: new AbortController().signal, agent: { id: 'session-routes' } },
+    )
+    assert.match(result.text, /项目文档路由/, '`--routes` 没接进 run —— 又一个「schema 有、实现没有」')
+  })
+
+  it('context 弃权时给目录兜底，且 pinned 常驻段先渲染', async () => {
+    apply(ctx, {})
+
+    // 一条 pinned 记忆 —— 它必须**不依赖查询命中**就出现在注入里。
+    const { ensureLayout, writeEntry } = await import('../lib/store.js')
+    const { ensureSnapshot } = await import('../lib/index-build.js')
+    ensureLayout(root)
+    writeEntry(root, {
+      id: 'redis_dep',
+      title: '集成测试要先起 redis',
+      kind: 'convention',
+      about: '跑集成测试之前必须先起 redis',
+      body: '# 功能名\n集成测试依赖\n\n# 执行\n先起 redis。',
+      pinned: true,
+      evidence: [{ kind: 'file', ref: 'README.md' }],
+    })
+    ensureSnapshot(root, { force: true })
+
+    // 喂一条与语料完全无关的查询 —— 必然 abstain。
+    const listener = ctx._listeners.find((item) => item.event === 'session/event')
+    listener.listener({
+      sessionId: 'sess-e2e',
+      event: { type: 'user/message', data: { text: '完全无关的查询词' } },
+    })
+
+    const [context] = ctx._contexts
+    const text = context.text({ agent: { id: 'sess-e2e' } })
+
+    assert.match(text, /常驻（pinned）/, 'pinned 段没接进注入')
+    assert.match(text, /redis_dep/, 'pinned 条目没出现在注入里')
+    assert.match(text, /没有召回/, 'abstain 的结论仍然要说')
+    assert.match(text, /兜底/, 'abstain 的目录兜底没接进注入（`renderRecall` 的 fallbackHint）')
+  })
+
   it('注册 1 个 prompt context，位置与可抑制性正确', () => {
     apply(ctx, {})
     assert.equal(ctx._contexts.length, 1)
@@ -177,10 +238,14 @@ describe(
     assert.equal(typeof context.text, 'function')
   })
 
-  it('监听 session/event 与 agent/turn-stopping', () => {
+  it('监听 session/event、agent/turn-stopping 与 tools/pre-execute', () => {
     apply(ctx, {})
     const events = ctx._listeners.map((item) => item.event).sort()
-    assert.deepEqual(events, ['agent/turn-stopping', 'session/event'])
+    assert.deepEqual(
+      events,
+      ['agent/turn-stopping', 'session/event', 'tools/pre-execute'],
+      '`tools/pre-execute` 是写入口收口的**唯一**挂点 —— 掉一个，「绕过十道门」就没有拦截',
+    )
   })
 
   it('注册 /memory 斜杠命令（人机入口）', () => {
