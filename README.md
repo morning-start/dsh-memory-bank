@@ -28,18 +28,21 @@
 ## 安装
 
 ```bash
-dsh plugin install github:morning-start/dsh-memory-bank
+# 从 GitHub 安装（写进 desktop profile）
+dsh plugin --profile desktop add morning-start/dsh-memory-bank
+
+# 开发时用本地链接（改源码立刻生效）
+dsh plugin --profile desktop add link:/path/to/dsh-memory-bank
 ```
 
-开发时用本地链接（改源码立刻生效）：
-
-```bash
-dsh plugin install link:/path/to/dsh-memory-bank
-```
+`dsh plugin` 是 **pnpm 的转发器** —— 它把剩下的参数原样交给 profile 目录里的 pnpm。
+所以 GitHub 简写、`link:`、npm 包名三种形式都直接可用，装进哪里由 `--profile` 决定。
 
 装完在**任何**会话里可用 —— 不绑定预设。
 
 > **改 JS 后要重启宿主**。`link:` 安装的源码改动会直接反映在链接目录里，但模块代际不会热更新。刷新页面不算。
+
+卸载：`dsh plugin --profile desktop remove dsh-memory-bank`
 
 ---
 
