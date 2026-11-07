@@ -28,27 +28,61 @@
 export const NAMESPACE = 'memoryBank'
 
 /**
+ * 每个面板方法都带的**公共参数**：调用方所在的会话 id。
+ *
+ * ## 为什么面板必须自报会话
+ *
+ * 面板是 `conversation.view`，scope 是 `session` —— 它显示的**必须**是当前
+ * 会话所在仓库。但宿主在 RPC 面上拿不到 live Agent，只有 `lib/root.js` 的
+ * `memo`（最近一次**任何**会话解析出来的目录）可以兜底。
+ *
+ * 那是错的：`memo` 是**插件实例级**的，切到别的会话之后它还是上一个仓库。
+ * 症状就是「换一个仓库的会话，面板还显示老仓库」—— 而刷新一下又对了
+ * （刷新让 `system-prompt.context` 钩子重跑，`memo` 才更新）。
+ *
+ * 所以客户端把 `sessionId` 一起传上来，宿主用 `ctx.agents.get(sessionId)`
+ * 换回 Agent，再走**同一条** `resolveRoot(agent)` —— 和工具面、命令面完全
+ * 一致。
+ *
+ * **这不是把路径交给客户端。** 客户端只报「我是谁」，目录由宿主解析：
+ * 一条被篡改的 `sessionId` 最多让调用方看到**另一个它本来就能看到的会话**
+ * 的仓库，拿不到任意路径。
+ */
+export const SESSION_ARG = 'sessionId'
+
+/**
+ * 面板方法的参数表：**位置参数在前，`sessionId` 恒在最后**。
+ *
+ * 位置参数的名字要和 `client/index.js` 的 `ARG_NAMES` 逐条对上（客户端
+ * 按名字把位置参数摊成对象）—— `test/client.test.mjs` 的防漂移断言管这一段。
+ *
+ * @param {...string} names 位置参数名
+ * @returns {ReadonlyArray<string>}
+ */
+const panelArgs = (...names) => Object.freeze([...names, SESSION_ARG])
+
+/**
  * 只读查询。**必须复用现有实现，不许重写过滤条件**（见 `lib/host/queries.js`）。
  *
  * 每一项的 `args` 是客户端传的参数数组（JSON 编码，原样过线）。
  */
 export const QUERIES = Object.freeze({
   /** 健康概览：一行数字，界面 2 的顶部。 */
-  overview: Object.freeze({ method: 'overview', args: [] }),
+  overview: Object.freeze({ method: 'overview', args: panelArgs() }),
   /** 待决提案列表。`limit` 默认 10，范围 1-50。 */
-  pending: Object.freeze({ method: 'pending', args: ['limit'] }),
+  pending: Object.freeze({ method: 'pending', args: panelArgs('limit') }),
   /** 记忆检索。`query` 为空串时退化为「最近的条目」。 */
-  memories: Object.freeze({ method: 'memories', args: ['query', 'limit'] }),
+  memories: Object.freeze({ method: 'memories', args: panelArgs('query', 'limit') }),
   /** 漂移三桶：quarantined / advisory / unsafePath。 */
-  drift: Object.freeze({ method: 'drift', args: [] }),
+  drift: Object.freeze({ method: 'drift', args: panelArgs() }),
   /** 断言对账：open / contradicted / unverified。 */
-  claims: Object.freeze({ method: 'claims', args: [] }),
+  claims: Object.freeze({ method: 'claims', args: panelArgs() }),
   /** 审计时间线（ledger 尾部）。 */
-  ledger: Object.freeze({ method: 'ledger', args: ['limit'] }),
+  ledger: Object.freeze({ method: 'ledger', args: panelArgs('limit') }),
   /** 四层配置快照 + 每个字段的来源/可写性（界面 1 的数据源）。 */
-  config: Object.freeze({ method: 'config', args: [] }),
+  config: Object.freeze({ method: 'config', args: panelArgs() }),
   /** 项目层配置（界面 3 的抽屉）。 */
-  projectConfig: Object.freeze({ method: 'projectConfig', args: [] }),
+  projectConfig: Object.freeze({ method: 'projectConfig', args: panelArgs() }),
 })
 
 /**
@@ -57,23 +91,23 @@ export const QUERIES = Object.freeze({
  */
 export const MUTATIONS = Object.freeze({
   /** 接受一条待决提案。 */
-  accept: Object.freeze({ method: 'accept', args: ['id'] }),
+  accept: Object.freeze({ method: 'accept', args: panelArgs('id') }),
   /** 拒绝一条待决提案（进 `pending/rejected/` 留档）。 */
-  reject: Object.freeze({ method: 'reject', args: ['id', 'reason'] }),
+  reject: Object.freeze({ method: 'reject', args: panelArgs('id', 'reason') }),
   /** 编辑后接受。`patch` 只认内容字段。 */
-  edit: Object.freeze({ method: 'edit', args: ['id', 'patch'] }),
+  edit: Object.freeze({ method: 'edit', args: panelArgs('id', 'patch') }),
   /** 退休一条记忆（软删除）。 */
-  retire: Object.freeze({ method: 'retire', args: ['id', 'reason'] }),
+  retire: Object.freeze({ method: 'retire', args: panelArgs('id', 'reason') }),
   /** 永久删除。**必须 `confirm: true`** —— 破坏性操作不能靠默认值发生。 */
-  forget: Object.freeze({ method: 'forget', args: ['id', 'confirm'] }),
+  forget: Object.freeze({ method: 'forget', args: panelArgs('id', 'confirm') }),
   /** 跑一次 dream pass 并暂存提案（**不改记忆**）。 */
-  dream: Object.freeze({ method: 'dream', args: [] }),
+  dream: Object.freeze({ method: 'dream', args: panelArgs() }),
   /** 生成可推广到全局记忆的包（**只产出，不写全局存储**）。 */
-  promote: Object.freeze({ method: 'promote', args: ['options'] }),
+  promote: Object.freeze({ method: 'promote', args: panelArgs('options') }),
   /** 写项目层（`<repo>/.dsh-memory/config.json`）。只认仓库属性。 */
-  setProjectConfig: Object.freeze({ method: 'setProjectConfig', args: ['patch'] }),
+  setProjectConfig: Object.freeze({ method: 'setProjectConfig', args: panelArgs('patch') }),
   /** 重置项目层（清空仓库级覆盖）。 */
-  resetProjectConfig: Object.freeze({ method: 'resetProjectConfig', args: [] }),
+  resetProjectConfig: Object.freeze({ method: 'resetProjectConfig', args: panelArgs() }),
 })
 
 /** 全部方法（宿主注册时按这个顺序，测试也按它比对）。 */

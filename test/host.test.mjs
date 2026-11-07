@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 
 import { createMemoryCommand } from '../lib/command.js'
 import { createConfigSource } from '../lib/config/index.js'
+import { createRootResolver } from '../lib/root.js'
 import { MUTATIONS, METHODS, NAMESPACE, QUERIES } from '../shared/endpoints.js'
 
 import { AsyncMutationError, ConfirmRequiredError, StaleRevisionError, WriteLockedError, createGuards } from '../lib/host/guards.js'
@@ -723,6 +724,124 @@ describe('typert · 面板服务', { skip: hostService ? false : PEER_REASON }, 
         `${endpoint} 的线上参数名漂移了`,
       )
     }
+  })
+})
+
+/* ── 6.1 · 面板按会话解析仓库根（0.4.3） ────────────────────────── */
+
+describe('面板服务 · 按 sessionId 解析仓库根', { skip: hostService ? false : PEER_REASON }, () => {
+  /**
+   * 造一个「两个仓库、两个会话」的宿主。
+   *
+   * `workingDirectory.get(session)` 收的是 **Session**，不是 Agent ——
+   * 这里用 `session.header.cwd` 当会话 id 反查仓库，正是 `lib/root.js` 的
+   * `fromSession` 期望的形状。
+   */
+  function createRepoHost(profileDir) {
+    const repoOf = new Map([
+      ['session-a', join(profileDir, 'repo-a')],
+      ['session-b', join(profileDir, 'repo-b')],
+    ])
+    for (const directory of repoOf.values()) mkdirSync(directory, { recursive: true })
+
+    const resolver = createRootResolver({ env: {}, cwd: () => profileDir })
+    resolver.useWorkingDirectory({
+      defaultDirectory: profileDir,
+      get: (session) => repoOf.get(session?.header?.cwd) ?? profileDir,
+    })
+
+    const ctx = new cordis.Context()
+    /**
+     * `sessionId` → Agent。生产上由 `lib/index.js` 用
+     * `ctx.inject(['agents'], ...)` 拿到宿主服务再传进来 —— 服务本身
+     * 不碰 `ctx.agents`（cordis 对没声明的服务直接抛）。
+     */
+    const agentOf = (sessionId) =>
+      repoOf.has(sessionId) ? { session: { header: { cwd: sessionId } } } : undefined
+
+    // 生产上 `lib/index.js` 会在 resolver 上挂 `.source()`（界面画来源徽标用）。
+    // 测试也要挂 —— 否则 `rootSource()` 恒为 null，那条断言就是空的。
+    const resolveRoot = (agent) => resolver.resolve(agent)
+    resolveRoot.source = () => resolver.source
+
+    const service = new hostService.MemoryBankService(ctx, {}, {
+      resolveRoot,
+      configSource,
+      guards,
+      agentOf,
+    })
+    return { service, repoOf }
+  }
+
+  it('**不同会话 → 不同仓库根**（`memo` 是插件实例级的，靠不住）', () => {
+    const profileDir = mkdtempSync(join(tmpdir(), 'mb-roots-'))
+    try {
+      const { service, repoOf } = createRepoHost(profileDir)
+
+      // 0.4.2 之前面板面不传 agent，`resolveRoot()` 只能退回 `memo` ——
+      // 于是「切到另一个仓库的会话」还显示上一个仓库，必须刷新页面才对。
+      assert.equal(service.root('session-a'), repoOf.get('session-a'))
+      assert.equal(
+        service.root('session-b'),
+        repoOf.get('session-b'),
+        '切会话必须换仓库根 —— 这一条挂了说明又退回 memo 了',
+      )
+      // 来源必须是 `session`（界面上不画回退警告）。
+      assert.equal(service.rootSource(), 'session')
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
+    }
+  })
+
+  it('未知 / 缺失的 sessionId 不崩，退回兜底并如实报告来源', () => {
+    const profileDir = mkdtempSync(join(tmpdir(), 'mb-roots-'))
+    try {
+      const { service } = createRepoHost(profileDir)
+
+      // 会话已经消失（关掉了标签页）—— 不能抛，面板要能画出「读不到」。
+      assert.doesNotThrow(() => service.root('session-gone'))
+      assert.doesNotThrow(() => service.root(undefined))
+      // 一次都没解析成功过 → 走 fallback，界面据此画警告条。
+      assert.equal(service.rootSource(), 'fallback')
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
+    }
+  })
+
+  it('endpoints 的每个方法都把 sessionId 放在**最后**一个参数', () => {
+    // 客户端门面靠「位置参数在前、sessionId 恒在最后」把位置数组摊成具名对象。
+    for (const entry of [...Object.values(QUERIES), ...Object.values(MUTATIONS)]) {
+      assert.equal(
+        entry.args.at(-1),
+        'sessionId',
+        `${entry.method} 的 sessionId 不在最后：${entry.args.join(', ')}`,
+      )
+      assert.equal(
+        entry.args.filter((name) => name === 'sessionId').length,
+        1,
+        `${entry.method} 重复声明了 sessionId`,
+      )
+    }
+  })
+
+  it('接线：`lib/index.js` 真的把 agentOf 接进了面板服务', () => {
+    // **为什么是源码级断言。** 服务是 `ctx.effect` 里动态 import 出来的，
+    // 单元测试直接 `new MemoryBankService(...)` 会**自己**传 `agentOf` ——
+    // 于是「生产上接没接」这件事没有任何用例覆盖。
+    //
+    // 0.4.2 之前就是这样：`sessionId` 一路传到 `root()`，但 `agentOf` 恒为
+    // `() => undefined`，面板还是退回 `memo`。接线断了而测试全绿。
+    const source = readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8')
+    assert.match(
+      source,
+      /agentOf:\s*agentOfSession/,
+      '面板服务必须接 `agentOf: agentOfSession` —— 否则 sessionId 白传',
+    )
+    assert.match(
+      source,
+      /ctx\.inject\(\['agents'\]/,
+      '`agentOfSession` 必须由 `ctx.inject([\'agents\'], ...)` 拿到的服务实现（直接读 ctx.agents 会抛）',
+    )
   })
 })
 

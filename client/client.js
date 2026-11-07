@@ -3353,10 +3353,14 @@ const DRIFT_BUCKETS = Object.freeze(['quarantined', 'advisory', 'unsafePath', 'n
 
 /**
  * 记忆面板的状态机。数据全部来自只读查询 + 写操作 RPC。
+ *
  * @param {{ remote: { memoryBank: Record<string, Function> } }} ctx
  * @param {Function} t
+ * @param {{ current: string | null }} [sessionRef] 当前面板所属的会话。
+ *   门面每次调用都会读它（`SESSION_ARG`）—— 宿主据此解析仓库根。
+ *   `apply` 传同一个对象进来，`MemoryView` 挂载时写。
  */
-function createMemoryController(ctx, t) {
+function createMemoryController(ctx, t, sessionRef = { current: null }) {
   const store = createStore({
     status: 'loading',
     error: null,
@@ -3409,6 +3413,21 @@ function createMemoryController(ctx, t) {
   const api = {
     subscribe: store.subscribe,
     getSnapshot: store.getSnapshot,
+
+    /**
+     * 记住「这一栏现在属于哪个会话」。
+     *
+     * 必须在 `load()` **之前**调 —— 门面每次 RPC 都读它（`SESSION_ARG`），
+     * 宿主用 `ctx.agents.get(sessionId)` 换回 Agent 再解析仓库根。
+     *
+     * 传空值（`undefined` / `''`）等于「不知道」：门面不传这个字段，宿主退回
+     * `memo` / fallback，并在界面上把来源标出来（只要 `lastSource` 修好了）。
+     *
+     * @param {unknown} sessionId
+     */
+    useSession(sessionId) {
+      sessionRef.current = typeof sessionId === 'string' && sessionId !== '' ? sessionId : null
+    },
 
     /** 读一轮快照。六个查询并发，任意一个失败就整页报错（不显示半截数字）。 */
     async load() {
@@ -3573,30 +3592,33 @@ function createMemoryController(ctx, t) {
  * 对话视图没有那一层，**而且它要自己吃掉整个面板高度**（否则短内容时下面
  * 留一片空白，长内容时被裁掉）。
  *
- * @param {{ t: Function, memory: any, config: any }} props
+ * @param {{ t: Function, memory: any, config: any, sessionId?: string }} props
  */
 function MemoryView(props) {
-  const { t } = props
+  const { t, sessionId } = props
   const memory = props.memory
   const state = React.useSyncExternalStore(memory.subscribe, memory.getSnapshot)
 
   /**
-   * **切到这一栏（挂载）时重新读一次。**
+   * **切到这一栏（挂载）时：先报会话，再重新读一次。**
    *
    * 为什么不能只靠 `apply` 里那一轮：插件的客户端半边在**页面加载**时就装了，
    * 那时还没有任何会话 —— 宿主 `resolveRoot()` 拿不到 live Agent，只能回退到
    * 进程 cwd（profile 目录）。于是面板显示的是 profile 里的 0 条记忆，而路径
    * 看起来**像一条正常的绝对路径**，不手动刷新根本看不出问题。
    *
-   * 等用户真的点开这一栏时，本轮会话早就跑过 `system-prompt.context` 钩子，
-   * 宿主那份 memo 已经是真仓库了 —— 重新读一次就对上。
+   * 而**光重读不够**：宿主那份 `memo` 是插件实例级的，切到另一个仓库的会话
+   * 之后它还是上一个仓库。所以必须把 `sessionId` 一起带上去 ——
+   * `useSession` 写进门面读的那个引用，宿主用 `ctx.agents.get(sessionId)`
+   * 换回 Agent 再走同一条 `resolveRoot(agent)`。
    *
    * `load()` 不写 `status: 'loading'`，所以重读不会闪一下空白：旧数据一直
    * 留在屏幕上，直到新数据到达。
    */
   React.useEffect(() => {
+    memory.useSession(sessionId)
     void memory.load()
-  }, [memory])
+  }, [memory, sessionId])
 
   return h(
     'div',
@@ -4306,6 +4328,24 @@ const ARG_NAMES = Object.freeze({
 })
 
 /**
+ * 每个面板方法都带的**公共参数**：调用方所在的会话 id。
+ *
+ * **逐字抄自 `shared/endpoints.js` 的 `SESSION_ARG`**（自包含脚本不能
+ * `import`）。`test/client.test.mjs` 的防漂移断言比对「`ARG_NAMES` 每条
+ * 加上这个尾巴」与 `shared/` 的 `args` 表，少一条就红。
+ *
+ * ## 为什么必须传
+ *
+ * 面板是 `conversation.view`，scope 是 `session` —— 它显示的**必须**是当前
+ * 会话所在仓库。宿主在 RPC 面上拿不到 live Agent，只有 `memo` 可以兜底，
+ * 而 `memo` 是**插件实例级**的：切到别的会话之后它还是上一个仓库。
+ *
+ * 客户端只报「我是谁」，目录由宿主用 `ctx.agents.get(sessionId)` 解析
+ * （`lib/host/service.js` 的 `root()`）—— **不把路径交给客户端**。
+ */
+const SESSION_ARG = 'sessionId'
+
+/**
  * 把 `memoryBank/*` 包成**惰性门面**。
  *
  * 视图按 `remote.memoryBank.overview()` 这样调用，门面负责拼 RPC。
@@ -4316,8 +4356,11 @@ const ARG_NAMES = Object.freeze({
  * **可选能力不许拖死本体。**
  *
  * @param {any} ctx 浏览器插件上下文
+ * @param {() => string | null} readSessionId 当前面板所属的会话（切栏时由
+ *   `MemoryView` 写入）。拿不到就**不传**这个字段 —— 宿主会退回 `memo` /
+ *   fallback，并在界面上标出来源。
  */
-function memoryBankFacade(ctx) {
+function memoryBankFacade(ctx, readSessionId) {
   const call = (method, positional) => {
     const names = ARG_NAMES[method]
     if (names === undefined) {
@@ -4336,6 +4379,12 @@ function memoryBankFacade(ctx) {
     for (let index = 0; index < names.length; index += 1) {
       if (positional[index] !== undefined) args[names[index]] = positional[index]
     }
+
+    // 会话 id 恒在最后，且**不接受调用方传**：它只从 `MemoryView` 的挂载
+    // 状态来。这样「面板显示的是哪个仓库」只有一个来源，不会出现
+    // 「某个调用点忘了传、静默退回 memo」。
+    const sessionId = typeof readSessionId === 'function' ? readSessionId() : null
+    if (typeof sessionId === 'string' && sessionId !== '') args[SESSION_ARG] = sessionId
 
     // **原样返回 RPC 信封**（`{ ok, value } | { ok:false, error }`），不在这里拆。
     //
@@ -4367,19 +4416,37 @@ function apply(ctx) {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'memory-bank: dictionaries')
 
+  /**
+   * 面板当前所属的会话。**单值足够**：`conversation.view` 一次只渲染一栏
+   * （宿主 `renderSlot(..., { only: viewId })`），不存在两栏同时挂载。
+   *
+   * 为什么必须由视图写进来：`apply` 在**页面加载**时跑，那时还没有任何会话；
+   * 只有 `conversation.view` 的 `inject(sessionId)` 知道「用户现在在看哪个
+   * 会话」。少了它，宿主只能退回 `memo` —— 而 `memo` 是插件实例级的，
+   * 切会话之后还是上一个仓库。
+   */
+  const sessionRef = { current: null }
+
   // 视图只碰 `remote.memoryBank`，所以传门面而不是整个 ctx：
   // 这样「RPC 面还没好」不会在 render 期间抛，只在真正调用时变成一条可读的错误。
-  const view = { remote: { memoryBank: memoryBankFacade(ctx) } }
+  const view = { remote: { memoryBank: memoryBankFacade(ctx, () => sessionRef.current) } }
 
   // 两个控制器活在 `apply` 这一层：槽塌陷再恢复时，暂存的修改和已读的数据
   // 都还在（`inject` 的回调会被反复调用，状态不能放那里面）。
   const config = createConfigController(view, t)
-  const memory = createMemoryController(view, t)
+  const memory = createMemoryController(view, t, sessionRef)
 
 
   ctx.effect(() => {
     void config.load()
-    void memory.load()
+    // **刻意不在这里读记忆面板。**
+    //
+    // `apply` 跑在**页面加载**时，那时还没有任何会话 —— 宿主解析不到仓库根，
+    // 只能回退到进程 cwd（profile 目录）。读了就是一次「显示错误仓库」的
+    // 快照，而它看起来像一条正常的绝对路径，用户看不出问题。
+    //
+    // 面板是 `conversation.view`（scope: session）：**切到这一栏时读**
+    // （`MemoryView` 的 effect），那一刻既有会话 id、又能重读。
     return () => {
       config.dispose()
       memory.dispose()
@@ -4417,6 +4484,10 @@ function apply(ctx) {
   //
   // 为什么放在最后而不是最前：`order` 决定它排在哪一栏。60 让它在团队视图
   // 之后、Git 之前 —— 这两个是「看当前会话的数据」，记忆面板和它们同类。
+  //
+  // **`inject` 收 `sessionId`**（`conversation.view` 的 scope 是 `session`）：
+  // 面板显示的必须是**当前会话所在仓库**，而宿主在 RPC 面上没有 live Agent。
+  // 视图把它交给控制器，门面再随每次调用传给宿主（`SESSION_ARG`）。
   ctx.slots.inject('conversation.view', () =>
     ctx.slots.register(
       {
@@ -4425,7 +4496,7 @@ function apply(ctx) {
         order: 60,
         label: () => t('panelTitle'),
         locale: NS,
-        inject: () => ({ memory, config }),
+        inject: (sessionId) => ({ memory, config, sessionId }),
       },
       MemoryView,
     ),

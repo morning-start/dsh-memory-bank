@@ -482,8 +482,16 @@ async function mount() {
   module_.apply(fake.ctx)
 
   // 槽声明时回调同步跑 —— 这里手动模拟一次。
+  //
+  // `conversation.view` 的 `inject` 收 `sessionId`（scope 是 `session`）：
+  // 面板靠它告诉宿主「我在哪个会话里」，宿主才能解析出正确的仓库根。
+  // 其余两个槽的 inject 不吃参数 —— 按 owner 分流，顺便盯住「某个槽偷偷
+  // 多了个参数」这种情况。
   for (const injection of fake.injections) {
-    const dispose = injection.callback()
+    const dispose =
+      injection.owner === 'conversation.view'
+        ? injection.callback('session-test')
+        : injection.callback()
     assert.equal(
       typeof dispose,
       'function',
@@ -511,6 +519,27 @@ function registrationOf(registrations, name) {
   const found = registrations.filter((entry) => entry.options.name === name)
   assert.equal(found.length, 1, `槽 ${name} 应该正好注册一次，实际 ${found.length} 次`)
   return found[0]
+}
+
+/**
+ * 挂载「记忆」栏并等它读完一轮。
+ *
+ * 面板**只在切到这一栏时**读 —— `apply` 跑在页面加载时，那时还没有任何会话，
+ * 宿主解析不到仓库根（只能回退到进程 cwd）。所以每个渲染测试都必须先挂一次，
+ * 而且要把 `sessionId` 带上。
+ *
+ * @param {any[]} registrations `mount()` 的返回值
+ * @param {Function} t 翻译函数
+ * @param {string} [sessionId]
+ */
+async function mountView(registrations, t, sessionId = 'session-test') {
+  const view = registrationOf(registrations, 'conversation.view')
+  const injected = view.options.inject(sessionId)
+  const render = () => view.component({ t, ...injected })
+  render()
+  // `memory.load()` 是 async：等微任务落地再渲染一次，拿到的是**读完**的树。
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  return { view, injected, tree: render(), render }
 }
 
 /* ============================== 构建 ============================== */
@@ -736,6 +765,67 @@ test('漂移：SOURCES 的四个层名与 shared/endpoints.js 一致', () => {
   }
 })
 
+test('漂移：每次 RPC 传的具名参数与 shared/endpoints.js 的 args 表一致，且都带 sessionId', async () => {
+  // 客户端 `ARG_NAMES` 是 `shared/endpoints.js` 的**手抄副本**（自包含脚本
+  // 不能 import）。抄错一个名字，网关的 `assertExactArguments` 会整条拒掉 ——
+  // 而界面上只看到「数据不可用」，查起来极慢。
+  //
+  // 面板**只在切到这一栏时**读（`apply` 跑在页面加载时，还没有会话），
+  // 所以先挂一次。
+  const { calls, registrations, t } = await mount()
+  const view = registrationOf(registrations, 'conversation.view')
+  view.component({ t, ...view.options.inject('session-test') })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.ok(calls.length > 0, '挂载面板后应该已经发起过 RPC')
+
+  const table = Object.fromEntries(
+    [...Object.values(QUERIES), ...Object.values(MUTATIONS)].map((entry) => [entry.method, entry.args]),
+  )
+
+  /**
+   * **必须**带 `sessionId` 的方法：面板数据 + 面板动作。
+   *
+   * 四个 `config*` 方法不在里面 —— 它们同时被 **Plugins 页的配置面**调用，
+   * 而那个面没有会话（它改的是插件配置，不是「某个会话的仓库」）。网关对
+   * 纯 JS 服务按 `src-json` 处理，参数可省；所以「有会话就带上」是正确形态，
+   * 「无会话就必须失败」不是。
+   */
+  const SESSION_SCOPED = new Set([
+    'overview',
+    'pending',
+    'memories',
+    'drift',
+    'claims',
+    'ledger',
+    'accept',
+    'reject',
+    'edit',
+    'retire',
+    'forget',
+    'dream',
+    'promote',
+  ])
+
+  for (const call of calls) {
+    assert.ok(table[call.method] !== undefined, `memoryBank/${call.method} 不在 endpoints 表里`)
+    for (const key of Object.keys(call.named)) {
+      assert.ok(
+        table[call.method].includes(key),
+        `memoryBank/${call.method} 传了未声明的参数「${key}」（声明的是 ${table[call.method].join(', ')}）`,
+      )
+    }
+    if (!SESSION_SCOPED.has(call.method)) continue
+    // 面板显示的必须是**当前会话**所在仓库。少了它，宿主只能退回插件实例级
+    // 的 `memo` —— 切会话之后还是上一个仓库。
+    assert.ok(
+      'sessionId' in call.named,
+      `memoryBank/${call.method} 没带 sessionId：宿主解析不到本会话的仓库根`,
+    )
+    assert.equal(call.named.sessionId, 'session-test')
+  }
+})
+
 test('漂移：调用的 RPC 方法都在 shared/endpoints.js 的 METHODS 里', () => {
   const called = new Set(
     [...SOURCE.matchAll(/memoryBank\.([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]),
@@ -954,10 +1044,7 @@ test('渲染：行配置页只读，不许把部署配置写进仓库', async ()
 
 test('渲染：记忆面板健康概览 + 待决 + 四道门的解释', async () => {
   const { registrations, t } = await mount()
-  const section = registrationOf(registrations, 'conversation.view')
-  const injected = section.options.inject()
-
-  const tree = section.component({ t, ...injected })
+  const { tree } = await mountView(registrations, t)
   const text = textOfTree(tree)
 
   for (const expected of [
@@ -985,12 +1072,11 @@ test('渲染：记忆面板健康概览 + 待决 + 四道门的解释', async ()
 
 test('渲染：切 tab 能出记忆 / 漂移 / 审计', async () => {
   const { registrations, t } = await mount()
-  const section = registrationOf(registrations, 'conversation.view')
-  const injected = section.options.inject()
+  const { injected, render } = await mountView(registrations, t)
   const { memory } = injected
 
   memory.setTab('memories')
-  let tree = section.component({ t, ...injected })
+  let tree = render()
   assert.ok(
     findAll(tree, (node) => node.type === 'input' && typeof node.props.placeholder === 'string').some(
       (node) => node.props.placeholder.includes('搜索记忆'),
@@ -1000,27 +1086,26 @@ test('渲染：切 tab 能出记忆 / 漂移 / 审计', async () => {
   assert.ok(textOfTree(tree).includes('只用 --dsw-alias-* token'), '记忆列表没有内容')
 
   memory.setTab('drift')
-  tree = section.component({ t, ...injected })
+  tree = render()
   let text = textOfTree(tree)
   assert.ok(text.includes('隔离'), '漂移 tab 没有桶名')
   assert.ok(text.includes('src/db/pool.ts:42'), '漂移 tab 没有锚点')
 
   memory.setTab('ledger')
-  tree = section.component({ t, ...injected })
+  tree = render()
   text = textOfTree(tree)
   assert.ok(text.includes('裁决'), '审计 tab 没有条目类型')
 })
 
 test('渲染：项目配置抽屉只列仓库属性，并指向配置页', async () => {
   const { registrations, t } = await mount()
-  const section = registrationOf(registrations, 'conversation.view')
-  const injected = section.options.inject()
+  const { injected, render } = await mountView(registrations, t)
   const { memory, config } = injected
 
   // 造一个带仓库属性的快照：直接改控制器里那份数据太脏，用 setProjectConfig
   // 的返回值不方便，所以这里只验证「抽屉打开时用 projectScoped 过滤」。
   memory.openDrawer()
-  const tree = section.component({ t, ...injected })
+  const tree = render()
   const text = textOfTree(tree)
   assert.ok(text.includes('项目配置'), '抽屉标题不在')
   assert.ok(text.includes('只对这个仓库生效'), '抽屉副标题不在')
@@ -1032,31 +1117,41 @@ test('渲染：项目配置抽屉只列仓库属性，并指向配置页', async
   assert.ok(config !== undefined)
 })
 
-test('渲染：切到这一栏时重新读一次快照（不吃插件挂载时那份缓存）', async () => {
+test('渲染：切到这一栏时才读，且每次挂载都重读', async () => {
   // 0.4.1 的实际 bug：面板路径显示成 `C:\Users\<user>\.dsh\profiles\desktop`，
   // 必须**手动刷新页面**才变成真仓库。
   //
-  // 根因不是「路径算错」，是**什么时候算**：插件的客户端半边在页面加载时就装了，
+  // 根因不是「路径算错」，是**什么时候算**：`apply` 跑在页面加载时，
   // 那时还没有任何会话 —— 宿主 `resolveRoot()` 拿不到 live Agent，只能回退到
   // 进程 cwd（profile 目录）。而 `memory.load()` 只在 `apply` 里跑一次，
   // 于是面板把「页面加载那一刻的根」缓存到了用户点开这一栏。
   //
-  // 修法：`MemoryView` 挂载时重读。这条断言锁的就是「重读发生了」——
-  // 去掉那个 `useEffect` 它就会红。
+  // 修法：**`apply` 里不读**，改由 `MemoryView` 挂载时读。两条断言各锁一半：
+  // 挂载前一次都没有（否则又会缓存到错误的根），挂载后才读。
   const { registrations, t, calls } = await mount()
 
-  const before = calls.length
-  assert.ok(before > 0, '`apply` 里应该已经发起过一轮读取')
+  /**
+   * 面板**数据**方法。`config*` 不在此列 —— 它们在 `apply` 里就会被配置面
+   * （Plugins 页）读一次，那时没有会话，也不该有。
+   */
+  const PANEL_DATA = new Set(['overview', 'pending', 'memories', 'drift', 'claims', 'ledger'])
+  assert.equal(
+    calls.filter((call) => PANEL_DATA.has(call.method)).length,
+    0,
+    '`apply`（= 页面加载）时不该读记忆面板：那时还没有会话，宿主只能回退到进程 cwd',
+  )
 
   const view = registrationOf(registrations, 'conversation.view')
-  view.component({ t, ...view.options.inject() })
+  view.component({ t, ...view.options.inject('session-test') })
   await new Promise((resolve) => setTimeout(resolve, 0))
 
-  assert.ok(
-    calls.length > before,
-    '切到「记忆」这一栏时必须重新读一次快照：宿主解析仓库根依赖本会话跑过钩子，' +
-      '插件挂载时（页面加载）还没有会话，那一次读到的是 profile 目录',
-  )
+  assert.ok(calls.length > 0, '切到「记忆」这一栏时必须读一次快照')
+
+  // 再挂一次（= 切走再切回来）必须重读 —— 否则换了仓库还是老数据。
+  const before = calls.length
+  view.component({ t, ...view.options.inject('session-test') })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(calls.length > before, '再次挂载这一栏时必须重读')
 })
 
 test('渲染：翻译函数缺键时回退成键名而不是崩', async () => {

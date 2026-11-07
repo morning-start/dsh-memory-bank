@@ -49,10 +49,14 @@ const DRIFT_BUCKETS = Object.freeze(['quarantined', 'advisory', 'unsafePath', 'n
 
 /**
  * 记忆面板的状态机。数据全部来自只读查询 + 写操作 RPC。
+ *
  * @param {{ remote: { memoryBank: Record<string, Function> } }} ctx
  * @param {Function} t
+ * @param {{ current: string | null }} [sessionRef] 当前面板所属的会话。
+ *   门面每次调用都会读它（`SESSION_ARG`）—— 宿主据此解析仓库根。
+ *   `apply` 传同一个对象进来，`MemoryView` 挂载时写。
  */
-function createMemoryController(ctx, t) {
+function createMemoryController(ctx, t, sessionRef = { current: null }) {
   const store = createStore({
     status: 'loading',
     error: null,
@@ -105,6 +109,21 @@ function createMemoryController(ctx, t) {
   const api = {
     subscribe: store.subscribe,
     getSnapshot: store.getSnapshot,
+
+    /**
+     * 记住「这一栏现在属于哪个会话」。
+     *
+     * 必须在 `load()` **之前**调 —— 门面每次 RPC 都读它（`SESSION_ARG`），
+     * 宿主用 `ctx.agents.get(sessionId)` 换回 Agent 再解析仓库根。
+     *
+     * 传空值（`undefined` / `''`）等于「不知道」：门面不传这个字段，宿主退回
+     * `memo` / fallback，并在界面上把来源标出来（只要 `lastSource` 修好了）。
+     *
+     * @param {unknown} sessionId
+     */
+    useSession(sessionId) {
+      sessionRef.current = typeof sessionId === 'string' && sessionId !== '' ? sessionId : null
+    },
 
     /** 读一轮快照。六个查询并发，任意一个失败就整页报错（不显示半截数字）。 */
     async load() {
@@ -269,30 +288,33 @@ function createMemoryController(ctx, t) {
  * 对话视图没有那一层，**而且它要自己吃掉整个面板高度**（否则短内容时下面
  * 留一片空白，长内容时被裁掉）。
  *
- * @param {{ t: Function, memory: any, config: any }} props
+ * @param {{ t: Function, memory: any, config: any, sessionId?: string }} props
  */
 function MemoryView(props) {
-  const { t } = props
+  const { t, sessionId } = props
   const memory = props.memory
   const state = React.useSyncExternalStore(memory.subscribe, memory.getSnapshot)
 
   /**
-   * **切到这一栏（挂载）时重新读一次。**
+   * **切到这一栏（挂载）时：先报会话，再重新读一次。**
    *
    * 为什么不能只靠 `apply` 里那一轮：插件的客户端半边在**页面加载**时就装了，
    * 那时还没有任何会话 —— 宿主 `resolveRoot()` 拿不到 live Agent，只能回退到
    * 进程 cwd（profile 目录）。于是面板显示的是 profile 里的 0 条记忆，而路径
    * 看起来**像一条正常的绝对路径**，不手动刷新根本看不出问题。
    *
-   * 等用户真的点开这一栏时，本轮会话早就跑过 `system-prompt.context` 钩子，
-   * 宿主那份 memo 已经是真仓库了 —— 重新读一次就对上。
+   * 而**光重读不够**：宿主那份 `memo` 是插件实例级的，切到另一个仓库的会话
+   * 之后它还是上一个仓库。所以必须把 `sessionId` 一起带上去 ——
+   * `useSession` 写进门面读的那个引用，宿主用 `ctx.agents.get(sessionId)`
+   * 换回 Agent 再走同一条 `resolveRoot(agent)`。
    *
    * `load()` 不写 `status: 'loading'`，所以重读不会闪一下空白：旧数据一直
    * 留在屏幕上，直到新数据到达。
    */
   React.useEffect(() => {
+    memory.useSession(sessionId)
     void memory.load()
-  }, [memory])
+  }, [memory, sessionId])
 
   return h(
     'div',

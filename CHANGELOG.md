@@ -6,6 +6,89 @@
 
 ---
 
+## [0.4.3] - 2026-11-08
+
+> 这一版让面板**真正按会话读仓库**，而不是靠「最近一次不知道哪个会话解析出来的目录」。
+
+### Fixed · 切会话后仍显示上一个仓库
+
+0.4.2 让面板「挂载时重读」，解决了「必须手动刷新」。但重读拿到的是
+`lib/root.js` 的 `memo` —— 而 `memo` 是**插件实例级**的：
+
+```js
+// lib/root.js（0.4.2）
+if (memo !== null) return memo.root   // ← 最近一次**任何**会话解析出来的目录
+```
+
+于是**切到另一个仓库的会话，面板还是上一个仓库**。刷新一下又对了，因为刷新
+让 `system-prompt.context` 钩子重跑、`memo` 才更新 —— 症状和 0.4.2 一模
+一样，只是触发条件从「第一次打开」变成「换会话」。
+
+**根因**：宿主在 RPC 面上拿不到 live Agent，而面板**没有把自己是谁告诉宿主**。
+
+### 修法 · 面板自报 `sessionId`，宿主解析目录
+
+`conversation.view` 的 scope 是 `session`，`inject` 本来就收 `sessionId`
+（`dsh-client-ui-trajectory` 同款用法）。把它一路带上去：
+
+| 层 | 改动 |
+|---|---|
+| `shared/endpoints.js` | 新增 `SESSION_ARG = 'sessionId'`；每个方法的 `args` 末尾恒带它 |
+| `client/index.js` | `inject: (sessionId) => ({ ..., sessionId })`；门面每次 RPC 自动附上 |
+| `client/views/memory.js` | `MemoryView` 挂载时 `memory.useSession(sessionId)` **再** `load()` |
+| `lib/host/service.js` | `root(sessionId)` → `this.agentOf(sessionId)` → **同一条** `resolveRoot(agent)` |
+| `lib/index.js` | `ctx.inject(['agents'], ...)` 拿到服务，传 `agentOf` 进去 |
+
+**这不是把路径交给客户端。** 客户端只报「我是谁」，目录由宿主用
+`ctx.agents.get(sessionId)` 换回 Agent 再解析 —— 一条被篡改的 `sessionId`
+最多让调用方看到**另一个它本来就能看到的会话**的仓库，拿不到任意路径。
+
+`lib/host/service.js` **不直接读 `ctx.agents`**：cordis 对没 `inject` 声明的
+服务直接抛（`lib/root.js` 文件头记着同一个坑）。所以由 `lib/index.js` 用
+`ctx.inject(['agents'], ...)` 拿到服务，再把纯函数传进去 —— 服务这一层只管
+「拿不到就 `undefined`」。
+
+### 顺带 · `apply` 里不再读面板
+
+`apply` 跑在**页面加载**时，那时还没有任何会话。读了就是一次「显示错误仓库」
+的快照，而它看起来像一条正常的绝对路径。面板只在**切到这一栏时**读。
+
+### 回归
+
+| 用例 | 锁住什么 |
+|---|---|
+| `test/client.test.mjs`「漂移：每次 RPC 传的具名参数与 shared/ 的 args 表一致，且都带 sessionId」 | 手抄的 `ARG_NAMES` 与 `shared/` 不漂移；面板数据方法都带 `sessionId` |
+| `test/client.test.mjs`「切到这一栏时才读，且每次挂载都重读」 | `apply` 时一次都不读；挂载 / 重挂载都读 |
+| `test/host.test.mjs`「**不同会话 → 不同仓库根**」 | 核心：`root('session-a')` ≠ `root('session-b')`，且来源是 `session` |
+| `test/host.test.mjs`「未知 / 缺失的 sessionId 不崩」 | 关掉的标签页不能把面板炸掉 |
+| `test/host.test.mjs`「endpoints 的每个方法都把 sessionId 放在最后一个参数」 | 客户端按位置摊开的前提 |
+| `test/host.test.mjs`「接线：`lib/index.js` 真的把 agentOf 接进了面板服务」 | **源码级** —— 服务是动态 import 出来的，单测会自己传 `agentOf`，生产上接没接没人覆盖 |
+
+**变异测试**（两个都做过，都变红）：
+
+- 把 `agentOf: agentOfSession` 改成 `() => undefined` → 41 过 / **1 挂**；
+- 去掉门面里的 `args[SESSION_ARG] = sessionId` → 漂移回归挂。
+
+### 实测
+
+```
+npm test                    575 条（+1）· 0 fail · 0 skip
+scripts/check.mjs           78 文件语法 / 2 目录路由 / 死导出 0 / 跨模块重名 0
+bench/acceptance.mjs        7/7 · 38 个模块零网络
+scripts/doctor.mjs          自检通过
+build-client --check        120813 字节一致
+```
+
+### 迁移
+
+**不需要。** 线上参数是**加法**：网关按名字做精确匹配、纯 JS 服务的参数可省
+（`src-json`），所以老客户端少传 `sessionId` 也不会被拒 —— 只是退回
+`memo` / fallback，界面会画出来源徽标。
+
+要刷新页面才能看到修复（`client/client.js` 是签入产物）。
+
+---
+
 ## [0.4.2] - 2026-11-08
 
 > 这一版修两件（其实是同一件）事：**面板读的是哪个仓库，以及它能不能说出口。**
