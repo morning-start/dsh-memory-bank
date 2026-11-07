@@ -269,21 +269,39 @@ describe('queries · 与 /memory status 同源', () => {
 describe('queries · config 的来源 / 可写性', () => {
   const fieldOf = (snapshot, path) => snapshot.fields.find((field) => field.path === path)
 
-  it('默认层：全部可写，仓库属性标 projectScoped', () => {
+  it('默认层：只有仓库属性可写（写入口只有项目层）', () => {
     const snapshot = queries.config(root)
     assert.ok(Array.isArray(snapshot.groups) && snapshot.groups.length === 6)
     assert.ok(snapshot.projectPath.endsWith(join('.dsh-memory', 'config.json')))
     assert.deepEqual(snapshot.problems, [])
 
+    /**
+     * **回归（docs/08 P0-3）**：0.2.0 的 `writable` 是
+     * `source !== 'env' && source !== 'row'` —— 少了「是不是仓库属性」这一半。
+     * 于是 `autonomy` / `thresholds.*` / `recall.*` / `promote.*` /
+     * `embedding.*` / `conflict.*` / `root` 这 33 个叶子字段在界面上可编辑，
+     * 保存却返回 `ok: true` 且 `written: {}` —— 值静默回弹、零提示。
+     *
+     * 判据只有一个：**界面唯一的写入口是 `setProjectConfig`，它只认
+     * `PROJECT_KEYS`**。所以可写 ⇔ 仓库属性。
+     */
     const autonomy = fieldOf(snapshot, 'autonomy')
     assert.equal(autonomy.source, 'default')
-    assert.equal(autonomy.writable, true)
+    assert.equal(autonomy.writable, false, 'autonomy 不是仓库属性 —— 在这一页改会静默丢弃')
     assert.equal(autonomy.value, 'balanced')
     assert.equal(autonomy.projectScoped, false, 'autonomy 是用户偏好，不是仓库属性')
 
     const captureEnabled = fieldOf(snapshot, 'capture.enabled')
     assert.equal(captureEnabled.projectScoped, true, 'capture 是仓库属性（界面 3 的抽屉）')
     assert.equal(captureEnabled.projectWritable, true)
+    assert.equal(captureEnabled.writable, true)
+
+    // 一条断言钉住整条不变量：可写的字段必须全部是仓库属性。
+    for (const field of snapshot.fields) {
+      if (field.writable === true) {
+        assert.equal(field.projectScoped, true, `${field.path} 可写但不是仓库属性 —— 保存会被静默丢弃`)
+      }
+    }
   })
 
   it('环境变量层：source=env 且 writable=false（改这里不生效）', () => {

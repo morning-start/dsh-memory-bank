@@ -57,6 +57,17 @@ const en = {
   scopeOrder: 'Deployment > Environment > Project > Default',
   scopeNote:
     'Fields that come from a layer above the project are locked — editing them here has no effect, and the badge tells you where to change them.',
+  /**
+   * 行配置页的只读说明。
+   *
+   * 这一页的语义是**部署配置层**（`cordis.patch.yml` 的 `config:`），
+   * 而插件只有一个写入口：项目层（`<repo>/.dsh-memory/config.json`）。
+   * 在这一页保存会把部署配置**静默写进仓库**、来源徽标当场翻层 —— 所以这一页
+   * 只读，写明正确的改法。
+   */
+  rowConfigReadOnlyTitle: '这一页只读：它显示的是部署配置层',
+  rowConfigReadOnlyBody:
+    '这一层来自 profile 的 cordis.patch.yml（插件行 config），改它要编辑那个文件并重启宿主。仓库级的配置请到「设置 → 插件 → 记忆库 → 配置」改 —— 那才是写进 .dsh-memory/config.json 的那一层。',
 
   // ---- 字段 ----
   defaultValue: 'default {value}',
@@ -252,6 +263,10 @@ const zh = {
   scopeOrder: '部署配置 > 环境变量 > 项目配置 > 默认值',
   scopeNote:
     '从项目配置之外的层来的字段会锁住 —— 改这里不生效，徽标会告诉你该去改哪里。',
+  /** 行配置页的只读说明（见英文侧注释）。 */
+  rowConfigReadOnlyTitle: '这一页只读：它显示的是部署配置层',
+  rowConfigReadOnlyBody:
+    '这一层来自 profile 的 cordis.patch.yml（插件行 config），改它要编辑那个文件并重启宿主。仓库级的配置请到「设置 → 插件 → 记忆库 → 配置」改 —— 那才是写进 .dsh-memory/config.json 的那一层。',
 
   // ---- 字段 ----
   defaultValue: '默认 {value}',

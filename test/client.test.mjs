@@ -886,6 +886,49 @@ test('渲染：配置页 summary 是一句话', async () => {
   assert.ok(summary.length > 4)
 })
 
+/**
+ * **「行配置」页只读**（`docs/08` P0-4）。
+ *
+ * 这一页的语义是**部署配置层**（`cordis.patch.yml` 的 `config:`），而插件
+ * 唯一的写入口是**项目层**（`<repo>/.dsh-memory/config.json`）。0.2.0 让两个
+ * 页面复用同一个 `ConfigForm` → 同一个 `save()` → `setProjectConfig`，于是
+ * 「在部署配置页保存」会**静默写进仓库**、来源徽标当场从「部署配置」翻成
+ * 「项目配置」，一次点击污染团队的 git。
+ */
+test('渲染：行配置页只读，不许把部署配置写进仓库', async () => {
+  const { registrations, t } = await mount()
+  const row = registrationOf(registrations, 'plugins.row.config')
+  const page = row.component({ t, view: 'page', ...row.options.inject() })
+
+  const text = textOfTree(page)
+  assert.ok(text.includes('这一页只读'), '必须说明为什么只读，而不是悄悄少一个按钮')
+
+  // 整页被 `<fieldset disabled>` 包住：原生控件一个都点不动。
+  const fieldsets = findAll(page, (node) => node?.type === 'fieldset')
+  assert.equal(fieldsets.length, 1, '行配置页必须用 disabled fieldset 兜住所有控件')
+  assert.equal(fieldsets[0].props.disabled, true)
+
+  // 没有保存条 —— 「保存」主按钮一个都不许有。
+  const saveButtons = []
+  const walk = (node) => {
+    if (node === null || typeof node !== 'object') return
+    if (node.type === 'button' && String(node.props?.className ?? '').includes('mb-btn--primary')) {
+      saveButtons.push(node)
+    }
+    const children = Array.isArray(node.children) ? node.children : []
+    for (const child of children) walk(child)
+    if (Array.isArray(node)) for (const child of node) walk(child)
+  }
+  walk(page)
+  assert.equal(saveButtons.length, 0, '行配置页不该有「保存」主按钮')
+
+  const saveBars = findAll(
+    page,
+    (node) => typeof node?.props?.className === 'string' && node.props.className.includes('mb-saveBar'),
+  )
+  assert.equal(saveBars.length, 0, '行配置页不该有保存条')
+})
+
 test('渲染：记忆面板健康概览 + 待决 + 四道门的解释', async () => {
   const { registrations, t } = await mount()
   const section = registrationOf(registrations, 'settings.section')

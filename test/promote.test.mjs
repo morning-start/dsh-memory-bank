@@ -262,3 +262,55 @@ describe('schema', () => {
     assert.equal(bundle.summary.byKind.decision, 1)
   })
 })
+
+/**
+ * 硬排除的**默认配置**回归。
+ *
+ * 0.2.0 写的是 `config.safety?.forbidden ?? DEFAULT_FORBIDDEN`，而
+ * `defaultConfig().safety.forbidden` 是 **`[]` 不是 `undefined`** ——
+ * `??` 永不短路，于是**默认配置下规则表是空的**，密钥原样进包。
+ *
+ * 这条和 `lib/gate.js:793` 的 G3 是同一个判据，必须同形。
+ */
+describe('硬排除 · 默认配置（回归）', () => {
+  it('**没传 safety.forbidden 也必须扫默认规则**', () => {
+    const leaking = entry('leak', { body: 'api_key = sk-abcdefghijklmnopqrstuvwxyz012345' })
+    const { bundle, excluded } = buildPromotion([leaking], { root, config: {} })
+
+    assert.equal(bundle.entries.length, 0, '默认配置下含密钥的条目绝不能进包')
+    assert.equal(excluded.length, 1)
+    assert.equal(excluded[0].reason, 'secret')
+  })
+
+  it('**`evidence[].excerpt` 也要扫**（贴进摘录等于绕过整道门）', () => {
+    const leaking = entry('leak-excerpt', {
+      evidence: [
+        {
+          kind: 'file',
+          ref: 'src/db/pool.ts:17',
+          excerpt: 'password: hunter2hunter2hunter2',
+        },
+      ],
+    })
+    const { bundle, excluded } = buildPromotion([leaking], { root, config: {} })
+    assert.equal(bundle.entries.length, 0)
+    assert.equal(excluded[0]?.reason, 'secret')
+  })
+
+  it('用户加的规则是**追加**，不是替换', () => {
+    // 自定义规则 + 默认规则都要生效。
+    const custom = entry('custom', { body: 'ACME_INTERNAL_TOKEN_9527' })
+    const { excluded } = buildPromotion([custom], {
+      root,
+      config: { safety: { forbidden: ['ACME_INTERNAL_TOKEN_\\d+'] } },
+    })
+    assert.equal(excluded[0]?.reason, 'secret')
+
+    const defaultRule = entry('default-rule', { body: 'api_key = sk-abcdefghijklmnopqrstuvwxyz012345' })
+    const second = buildPromotion([defaultRule], {
+      root,
+      config: { safety: { forbidden: ['ACME_INTERNAL_TOKEN_\\d+'] } },
+    })
+    assert.equal(second.excluded[0]?.reason, 'secret', '默认规则不能因为用户加了规则而消失')
+  })
+})

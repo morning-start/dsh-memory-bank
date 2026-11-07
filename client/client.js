@@ -67,6 +67,17 @@ const en = {
   scopeOrder: 'Deployment > Environment > Project > Default',
   scopeNote:
     'Fields that come from a layer above the project are locked — editing them here has no effect, and the badge tells you where to change them.',
+  /**
+   * 行配置页的只读说明。
+   *
+   * 这一页的语义是**部署配置层**（`cordis.patch.yml` 的 `config:`），
+   * 而插件只有一个写入口：项目层（`<repo>/.dsh-memory/config.json`）。
+   * 在这一页保存会把部署配置**静默写进仓库**、来源徽标当场翻层 —— 所以这一页
+   * 只读，写明正确的改法。
+   */
+  rowConfigReadOnlyTitle: '这一页只读：它显示的是部署配置层',
+  rowConfigReadOnlyBody:
+    '这一层来自 profile 的 cordis.patch.yml（插件行 config），改它要编辑那个文件并重启宿主。仓库级的配置请到「设置 → 插件 → 记忆库 → 配置」改 —— 那才是写进 .dsh-memory/config.json 的那一层。',
 
   // ---- 字段 ----
   defaultValue: 'default {value}',
@@ -262,6 +273,10 @@ const zh = {
   scopeOrder: '部署配置 > 环境变量 > 项目配置 > 默认值',
   scopeNote:
     '从项目配置之外的层来的字段会锁住 —— 改这里不生效，徽标会告诉你该去改哪里。',
+  /** 行配置页的只读说明（见英文侧注释）。 */
+  rowConfigReadOnlyTitle: '这一页只读：它显示的是部署配置层',
+  rowConfigReadOnlyBody:
+    '这一层来自 profile 的 cordis.patch.yml（插件行 config），改它要编辑那个文件并重启宿主。仓库级的配置请到「设置 → 插件 → 记忆库 → 配置」改 —— 那才是写进 .dsh-memory/config.json 的那一层。',
 
   // ---- 字段 ----
   defaultValue: '默认 {value}',
@@ -1024,6 +1039,21 @@ const CSS = `
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
+}
+
+/**
+ * 只读整页（「行配置」页）。
+ *
+ * fieldset[disabled] 会自动禁掉里面所有原生控件 —— 比逐个字段传 disabled
+ * 可靠（漏一个就是一个「看起来能改、保存后静默丢弃」的入口）。
+ * 代价是浏览器给 fieldset 的默认样式，这里全部归零。
+ */
+.mb-readonlyFieldset {
+  display: contents;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .mb-readonly__head {
@@ -2483,9 +2513,20 @@ function createConfigController(ctx, t) {
 
 /**
  * 一整页配置。宿主只给我们一张字段表，分组与控件全部由它推出来。
- * @param {{ t: Function, config: ReturnType<typeof createConfigController> }} props
+ *
+ * @param {{
+ *   t: Function,
+ *   config: ReturnType<typeof createConfigController>,
+ *   readOnly?: boolean,
+ * }} props
+ *
+ * `readOnly` 是给「行配置页」（`plugins.row.config`）用的：那一页显示的是
+ * **部署配置层**（`cordis.patch.yml` 的 `config:`），而插件唯一的写入口是
+ * **项目层**（`<repo>/.dsh-memory/config.json`）。在这一页保存会把部署配置
+ * 静默写进仓库、来源徽标当场从「部署配置」翻成「项目配置」——
+ * 见 `docs/08` P0-4。整页只读，并写明正确的改法。
  */
-function ConfigForm({ t, config }) {
+function ConfigForm({ t, config, readOnly = false }) {
   const state = React.useSyncExternalStore(config.subscribe, config.getSnapshot)
 
   if (state.status === 'loading') {
@@ -2518,13 +2559,32 @@ function ConfigForm({ t, config }) {
 
   const dirty = Object.keys(state.draft).length
 
+  const groups = state.groups.map((group) => h(GroupSection, { key: group.id, t, config, state, group }))
+
   return h(
     'div',
     { className: 'mb-config' },
     state.problems.length === 0 ? null : h(Problems, { t, problems: state.problems }),
     h(ScopeBar, { t }),
-    state.groups.map((group) => h(GroupSection, { key: group.id, t, config, state, group })),
-    h(SaveBar, { t, config, state, dirty }),
+    readOnly
+      ? h(
+          'fieldset',
+          { className: 'mb-readonlyFieldset', disabled: true },
+          h(
+            'div',
+            { className: 'mb-readonly' },
+            h(
+              'div',
+              { className: 'mb-readonly__head' },
+              h(Icon, { name: 'shield', size: 15, className: 'mb-readonly__glyph' }),
+              h('span', null, t('rowConfigReadOnlyTitle')),
+            ),
+            h('p', { className: 'mb-readonly__desc' }, t('rowConfigReadOnlyBody')),
+          ),
+          groups,
+        )
+      : groups,
+    readOnly ? null : h(SaveBar, { t, config, state, dirty }),
   )
 }
 
@@ -3175,12 +3235,15 @@ function MemoryCard(props) {
 
 /**
  * `plugins.row.config` 的注册体：行配置页（key = `<包名>#<row id>`）。
+ *
+ * **只读。** 这一页的语义是部署配置层，而插件只有项目层一个写入口 ——
+ * 在这里保存会把部署配置写进仓库（见 `docs/08` P0-4）。
  * @param {{ t: Function, view: string, config: any }} props
  */
 function ConfigPage(props) {
   const { t, view } = props
   if (view === 'summary') return t('configSummary')
-  return h(ConfigForm, { t, config: props.config })
+  return h(ConfigForm, { t, config: props.config, readOnly: true })
 }
 
 /**

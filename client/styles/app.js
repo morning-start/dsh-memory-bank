@@ -610,6 +610,21 @@ const CSS = `
   background: var(--dsw-alias-bg-layer-1);
 }
 
+/**
+ * 只读整页（「行配置」页）。
+ *
+ * fieldset[disabled] 会自动禁掉里面所有原生控件 —— 比逐个字段传 disabled
+ * 可靠（漏一个就是一个「看起来能改、保存后静默丢弃」的入口）。
+ * 代价是浏览器给 fieldset 的默认样式，这里全部归零。
+ */
+.mb-readonlyFieldset {
+  display: contents;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .mb-readonly__head {
   display: flex;
   flex-wrap: wrap;

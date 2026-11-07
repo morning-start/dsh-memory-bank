@@ -336,9 +336,20 @@ function createConfigController(ctx, t) {
 
 /**
  * 一整页配置。宿主只给我们一张字段表，分组与控件全部由它推出来。
- * @param {{ t: Function, config: ReturnType<typeof createConfigController> }} props
+ *
+ * @param {{
+ *   t: Function,
+ *   config: ReturnType<typeof createConfigController>,
+ *   readOnly?: boolean,
+ * }} props
+ *
+ * `readOnly` 是给「行配置页」（`plugins.row.config`）用的：那一页显示的是
+ * **部署配置层**（`cordis.patch.yml` 的 `config:`），而插件唯一的写入口是
+ * **项目层**（`<repo>/.dsh-memory/config.json`）。在这一页保存会把部署配置
+ * 静默写进仓库、来源徽标当场从「部署配置」翻成「项目配置」——
+ * 见 `docs/08` P0-4。整页只读，并写明正确的改法。
  */
-function ConfigForm({ t, config }) {
+function ConfigForm({ t, config, readOnly = false }) {
   const state = React.useSyncExternalStore(config.subscribe, config.getSnapshot)
 
   if (state.status === 'loading') {
@@ -371,13 +382,32 @@ function ConfigForm({ t, config }) {
 
   const dirty = Object.keys(state.draft).length
 
+  const groups = state.groups.map((group) => h(GroupSection, { key: group.id, t, config, state, group }))
+
   return h(
     'div',
     { className: 'mb-config' },
     state.problems.length === 0 ? null : h(Problems, { t, problems: state.problems }),
     h(ScopeBar, { t }),
-    state.groups.map((group) => h(GroupSection, { key: group.id, t, config, state, group })),
-    h(SaveBar, { t, config, state, dirty }),
+    readOnly
+      ? h(
+          'fieldset',
+          { className: 'mb-readonlyFieldset', disabled: true },
+          h(
+            'div',
+            { className: 'mb-readonly' },
+            h(
+              'div',
+              { className: 'mb-readonly__head' },
+              h(Icon, { name: 'shield', size: 15, className: 'mb-readonly__glyph' }),
+              h('span', null, t('rowConfigReadOnlyTitle')),
+            ),
+            h('p', { className: 'mb-readonly__desc' }, t('rowConfigReadOnlyBody')),
+          ),
+          groups,
+        )
+      : groups,
+    readOnly ? null : h(SaveBar, { t, config, state, dirty }),
   )
 }
 
@@ -1028,10 +1058,13 @@ function MemoryCard(props) {
 
 /**
  * `plugins.row.config` 的注册体：行配置页（key = `<包名>#<row id>`）。
+ *
+ * **只读。** 这一页的语义是部署配置层，而插件只有项目层一个写入口 ——
+ * 在这里保存会把部署配置写进仓库（见 `docs/08` P0-4）。
  * @param {{ t: Function, view: string, config: any }} props
  */
 function ConfigPage(props) {
   const { t, view } = props
   if (view === 'summary') return t('configSummary')
-  return h(ConfigForm, { t, config: props.config })
+  return h(ConfigForm, { t, config: props.config, readOnly: true })
 }
