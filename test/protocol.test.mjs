@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 
-import { resolveConfig } from '../lib/config.js'
+import { fixedConfigSource, resolveConfig } from '../lib/config/index.js'
 import { computeConfidence, gateConflict, gateConfidence } from '../lib/gate.js'
 import { recall, renderRecall } from '../lib/recall.js'
 import { ensureSnapshot } from '../lib/index-build.js'
@@ -63,7 +63,7 @@ beforeEach(() => {
   writeFileSync(join(root, 'src', 'db', 'pool.ts'), 'export const DB_POOL_MAX = 10\n', 'utf8')
 
   cfg = resolveConfig({ autonomy: 'balanced' })
-  tools = createToolDefinitions({ resolveRoot: () => root, cfg, log: () => {} })
+  tools = createToolDefinitions({ resolveRoot: () => root, configSource: fixedConfigSource(cfg), log: () => {} })
 })
 
 afterEach(() => {
@@ -254,7 +254,7 @@ describe('DEFER 与裁决', () => {
   /** 把自动接受地板抬到 0.99：任何候选都过不了 G8，必然 DEFER。 */
   function strictTools() {
     const strict = resolveConfig({ autonomy: 'balanced', thresholds: { autoAcceptFloor: 0.99, deferFloor: 0.35 } })
-    return createToolDefinitions({ resolveRoot: () => root, cfg: strict, log: () => {} })
+    return createToolDefinitions({ resolveRoot: () => root, configSource: fixedConfigSource(strict), log: () => {} })
   }
 
   const remember = (definitions) =>

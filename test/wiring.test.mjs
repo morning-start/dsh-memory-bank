@@ -24,6 +24,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 
 import { createMemoryCommand } from '../lib/command.js'
+import { fixedConfigSource } from '../lib/config/index.js'
 import { createHooks } from '../lib/hooks.js'
 import { createToolDefinitions } from '../lib/tools.js'
 import { defaultConfig } from '../lib/store.js'
@@ -110,7 +111,7 @@ function wire({ config = {} } = {}) {
   const log = (message) => ctx._logs.push(`memory-bank: ${message}`)
   const resolveRoot = (agent) => agent?.workingDirectory ?? root
 
-  for (const definition of createToolDefinitions({ resolveRoot, cfg, log })) {
+  for (const definition of createToolDefinitions({ resolveRoot, configSource: fixedConfigSource(cfg), log })) {
     ctx.tools.register({
       name: definition.name,
       description: definition.description,
@@ -120,10 +121,10 @@ function wire({ config = {} } = {}) {
     })
   }
 
-  const hooks = createHooks({ ctx, cfg, resolveRoot, log, ask: (q) => ctx.userQuestions.ask(q) })
+  const hooks = createHooks({ ctx, configSource: fixedConfigSource(cfg), resolveRoot, log, ask: (q) => ctx.userQuestions.ask(q) })
   ctx.effect(() => hooks.install())
 
-  const command = createMemoryCommand({ resolveRoot, cfg, log })
+  const command = createMemoryCommand({ resolveRoot, configSource: fixedConfigSource(cfg), log })
   ctx.commands.register(command)
 
   return { cfg, hooks, command }
@@ -218,7 +219,7 @@ describe('插件接线（不依赖 peer）', () => {
       return root
     }
     const marker = { id: 'a1', workingDirectory: root }
-    const tools = createToolDefinitions({ resolveRoot, cfg: defaultConfig(), log: () => {} })
+    const tools = createToolDefinitions({ resolveRoot, configSource: fixedConfigSource(defaultConfig()), log: () => {} })
 
     const argsFor = {
       memory_remember: { title: 't', kind: 'fact', about: 'a', body: 'b' },

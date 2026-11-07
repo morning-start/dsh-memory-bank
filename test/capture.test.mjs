@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 
 import { buildCandidate, detectSignals, foldTurn, hasPlaceholder, placeholderSections } from '../lib/capture.js'
-import { resolveConfig } from '../lib/config.js'
+import { resolveConfig } from '../lib/config/index.js'
 import { createDrafter } from '../lib/draft.js'
 import { gateDraft, review } from '../lib/gate.js'
 import { collectOwners } from '../lib/gate.js'
@@ -176,7 +176,7 @@ describe('起草器', () => {
   const hit = { id: 'S1', kind: 'convention' }
 
   it('默认走模板（不调模型）', async () => {
-    const draft = createDrafter({ ctx: {}, cfg, log: () => {} })
+    const draft = createDrafter({ ctx: {}, getConfig: () => cfg, log: () => {} })
     const result = await draft({ facts: facts(), hit, id: 'x' })
     assert.equal(result.draftedBy, 'template')
     assert.equal(hasPlaceholder(result.candidate.body), true)
@@ -185,7 +185,7 @@ describe('起草器', () => {
   it('draft=subagent 但服务不可用 → 回退模板', async () => {
     const subagentCfg = resolveConfig({ capture: { draft: 'subagent' } })
     const logs = []
-    const draft = createDrafter({ ctx: {}, cfg: subagentCfg, log: (message) => logs.push(message) })
+    const draft = createDrafter({ ctx: {}, getConfig: () => subagentCfg, log: (message) => logs.push(message) })
     const result = await draft({ facts: facts(), hit, id: 'x' })
     assert.equal(result.draftedBy, 'template')
     assert.ok(logs.some((line) => line.includes('回退模板')))
@@ -218,7 +218,7 @@ describe('起草器', () => {
         },
       },
     }
-    const draft = createDrafter({ ctx, cfg: subagentCfg, log: () => {} })
+    const draft = createDrafter({ ctx, getConfig: () => subagentCfg, log: () => {} })
     const result = await draft({ facts: facts(), hit, id: 'x' })
     assert.equal(result.draftedBy, 'subagent')
     assert.equal(hasPlaceholder(result.candidate.body), false, '成稿不该有占位符')
@@ -235,7 +235,7 @@ describe('起草器', () => {
         },
       },
     }
-    const draft = createDrafter({ ctx, cfg: subagentCfg, log: () => {} })
+    const draft = createDrafter({ ctx, getConfig: () => subagentCfg, log: () => {} })
     const result = await draft({ facts: facts(), hit, id: 'x' })
     assert.equal(result.draftedBy, 'template')
   })
@@ -252,7 +252,7 @@ describe('起草器', () => {
         },
       },
     }
-    const draft = createDrafter({ ctx, cfg: subagentCfg, log: () => {} })
+    const draft = createDrafter({ ctx, getConfig: () => subagentCfg, log: () => {} })
     const result = await draft({ facts: facts(), hit, id: 'x' })
     assert.equal(result.draftedBy, 'subagent')
     assert.equal(hasPlaceholder(result.candidate.body), true)

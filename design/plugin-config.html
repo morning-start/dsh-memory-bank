@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="dsh-design" content="web">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>记忆库 配置 · DeepSeek Harness</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  .configPage { gap: 24px; padding-bottom: 0; }
+  .configPage > * { max-width: 960px; }
+
+  .detailMeta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    color: var(--label-caption);
+    font-size: 12px;
+    line-height: 18px;
+  }
+  .detailMeta .mono { color: var(--label-secondary); }
+
+  /* 作用域提示条：这一页最重要的一句话 */
+  .scopeBar {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 4px;
+    padding: 12px 14px;
+    border: 0.5px solid color-mix(in srgb, var(--state-business) 28%, transparent);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--state-business) 7%, transparent);
+  }
+  .scopeBar svg { margin-top: 2px; color: var(--state-business); }
+  .scopeBar p { margin: 0; color: var(--label-secondary); font-size: 12.5px; line-height: 19px; }
+  .scopeBar b { color: var(--label-primary); font-weight: 500; }
+  .scopeBar code {
+    padding: 1px 5px;
+    border-radius: var(--radius-xs);
+    background: var(--bg-module-platform);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  .sec {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding-top: 4px;
+  }
+  .sec + .sec { margin-top: 8px; }
+
+  .secHead { display: flex; align-items: baseline; gap: 10px; }
+  .secTitle { margin: 0; font-size: 14px; font-weight: 500; line-height: 20px; }
+  .secDesc { margin: 0; color: var(--label-tertiary); font-size: 12px; line-height: 18px; }
+  .secLine { flex: 1; height: 0.5px; background: var(--border-l1); }
+
+  .fieldRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 168px;
+    align-items: center;
+    gap: 24px;
+    padding: 12px 0;
+    border-bottom: 0.5px solid var(--border-l1);
+  }
+  .fieldRow:last-child { border-bottom: 0; }
+  .fieldRow__main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .fieldRow__title { display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 20px; }
+  .fieldRow__title .mono { color: var(--label-caption); font-size: 12px; }
+  .fieldRow__desc { margin: 0; color: var(--label-tertiary); font-size: 12px; line-height: 18px; }
+  .fieldRow__control { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .fieldRow__control .input { height: 34px; text-align: right; padding: 0 12px; }
+
+  .inputWrap { position: relative; width: 100%; }
+  .inputWrap .input { padding-right: 58px; }
+  .inputWrap__badge {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  .field.is-locked .input { background: var(--bg-layer-1); color: var(--label-secondary); }
+
+  /* 审核阈值网格 */
+  .thresholdGrid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px 20px;
+  }
+  .threshold { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .threshold__label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--label-secondary);
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .threshold__label .mono { color: var(--label-caption); font-size: 12px; }
+  .threshold .input { height: 36px; font-size: 13px; }
+
+  /* 可折叠的高级区 */
+  details.advanced {
+    border: 0.5px solid var(--border-l2);
+    border-radius: var(--radius-lg);
+    background: var(--bg-layer-1);
+  }
+  details.advanced > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    color: var(--label-secondary);
+    font-size: 13px;
+    line-height: 20px;
+    cursor: pointer;
+    list-style: none;
+  }
+  details.advanced > summary::-webkit-details-marker { display: none; }
+  details.advanced:not([open]) > .advanced__body { display: none; }
+  details.advanced > summary:hover { color: var(--label-primary); }
+  details.advanced > summary svg { transition: transform var(--duration) var(--ease-in-out); }
+  details.advanced[open] > summary svg { transform: rotate(180deg); }
+  details.advanced .advanced__body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 4px 16px 16px;
+  }
+
+  /* 模板 chips */
+  .templateList { display: flex; flex-wrap: wrap; gap: 6px; }
+  .templateChip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 4px 0 10px;
+    border: 0.5px solid var(--border-l3);
+    border-radius: var(--radius-pill);
+    background: var(--bg-layer-2);
+    color: var(--label-secondary);
+    font-size: 12px;
+  }
+  .templateChip button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-pill);
+    color: var(--label-caption);
+  }
+  .templateChip button:hover { background: var(--interactive-hover); color: var(--label-primary); }
+
+  /* 只读能力 */
+  .readonlyBox {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 0.5px solid var(--border-l2);
+    border-radius: var(--radius-md);
+    background: var(--bg-layer-1);
+  }
+  .readonlyBox__icon { color: var(--label-caption); margin-top: 1px; }
+  .readonlyBox__main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .readonlyBox__title { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 20px; }
+  .readonlyBox__desc { margin: 0; color: var(--label-tertiary); font-size: 12px; line-height: 18px; }
+
+  .saveBar { margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logoRow">
+      <a class="brand" href="plugins.html" aria-label="DeepSeek Harness 首页">
+        <img class="brand__mark" src="brand.svg" alt="DeepSeek Harness" width="167" height="20">
+      </a>
+      <button class="iconBtn" aria-label="折叠侧栏">
+        <svg width="16" height="16"><use href="icons.svg#i-panel"></use></svg>
+      </button>
+    </div>
+    <button class="newSession">
+      <svg width="14" height="14"><use href="icons.svg#i-new"></use></svg>
+      新会话
+      <kbd>Ctrl Alt N</kbd>
+    </button>
+    <nav class="nav" aria-label="主导航">
+      <button class="navItem" aria-current="page">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-plugin"></use></svg></span>
+        插件
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-clock"></use></svg></span>
+        自动化任务
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-team"></use></svg></span>
+        myteam
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-plug"></use></svg></span>
+        MCP 连接器
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-more"></use></svg></span>
+        更多
+      </button>
+    </nav>
+    <div class="region">
+      <div class="region__head">
+        <span>工作区</span>
+        <button class="iconBtn" aria-label="搜索"><svg width="14" height="14"><use href="icons.svg#i-search"></use></svg></button>
+        <button class="iconBtn" aria-label="排序"><svg width="14" height="14"><use href="icons.svg#i-sort"></use></svg></button>
+        <button class="iconBtn" aria-label="新建文件夹"><svg width="14" height="14"><use href="icons.svg#i-folder-plus"></use></svg></button>
+      </div>
+      <div class="region__body">
+        <div class="ws">
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>dsh-myteam</button>
+          <button class="sessionRow"><span class="sessionRow__title">新会话</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">team-dev</span><span class="sessionRow__time">50 分钟</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">dsh-talk-map 学习笔记</span><span class="sessionRow__time">13 小时</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">team 插件检查</span><span class="sessionRow__time">18 小时</span></button>
+        </div>
+        <div class="ws">
+          <button class="wsRow" aria-current="true"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>dsh-memory-bank</button>
+          <button class="sessionRow" aria-current="true"><span class="sessionRow__title">配置面 UI 设计</span><span class="sessionRow__time">刚刚</span></button>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar__foot">
+      <button class="account"><span class="avatar">山</span>山野村夫</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page configPage">
+      <div style="padding-top: 28px; display: flex; flex-direction: column; gap: 16px;">
+        <a class="crumb" href="plugins.html">
+          <svg width="14" height="14"><use href="icons.svg#i-chevron-left"></use></svg>
+          插件
+        </a>
+
+        <div class="detailHead">
+          <span class="detailIcon" style="border-color: color-mix(in srgb, var(--state-business) 26%, transparent); background: linear-gradient(150deg, color-mix(in srgb, var(--state-business) 18%, transparent), transparent); color: var(--state-business);">
+            <svg width="26" height="26"><use href="icons.svg#i-memory"></use></svg>
+          </span>
+          <div>
+            <div class="cardTitleRow">
+              <h1 class="detailTitle">记忆库</h1>
+              <span class="badge badge--mono">v0.1.1</span>
+              <span class="badge badge--ok">运行中</span>
+            </div>
+            <p class="detailDesc">项目级记忆：Agent 自己判断该不该记，十道门自审，判不了的才交人裁决。</p>
+          </div>
+        </div>
+
+        <div class="detailMeta">
+          <span>根目录</span>
+          <span class="mono">E:\Workplace\extension\dsh-memory-bank\.dsh-memory</span>
+          <span style="color: var(--label-tertiary)">·</span>
+          <span>42 条记忆</span>
+          <span style="color: var(--label-tertiary)">·</span>
+          <span>3 条待决</span>
+          <a class="btn btn--ghost btn--sm" href="memory.html" style="margin-left: auto;">
+            打开记忆面板
+            <svg width="12" height="12"><use href="icons.svg#i-chevron-right"></use></svg>
+          </a>
+        </div>
+
+        <div class="scopeBar">
+          <svg width="15" height="15"><use href="icons.svg#i-shield"></use></svg>
+          <p>
+            配置分四层生效，页面上的徽标就是这一项的来源：
+            <b>部署配置</b> &gt; <b>环境变量</b> &gt; <b>项目配置</b> &gt; <b>默认值</b>。
+            从项目配置之外的层来的字段会锁住 —— 改这里不生效，徽标会告诉你该去改哪里。
+          </p>
+        </div>
+      </div>
+
+      <!-- ============ 自主度 ============ -->
+      <section class="sec" aria-labelledby="s-autonomy">
+        <div class="secHead">
+          <h2 class="secTitle" id="s-autonomy">自主度</h2>
+          <span class="secDesc">它有多大权力自己决定要不要记住</span>
+          <span class="secLine"></span>
+          <span class="source source--project">项目配置</span>
+        </div>
+        <div class="choiceRow" role="radiogroup" aria-label="自主度">
+          <button class="choice" role="radio" aria-checked="false">
+            <span class="choice__head"><span class="choice__radio"></span><span class="choice__title">手动</span></span>
+            <span class="choice__desc">只在你说「记住这个」时写入。适合把每一个字都当承诺的仓库。</span>
+          </button>
+          <button class="choice" role="radio" aria-checked="true">
+            <span class="choice__head"><span class="choice__radio"></span><span class="choice__title">均衡</span><span class="badge">默认</span></span>
+            <span class="choice__desc">命中捕获信号才记，置信度不够就进待决队列。日常用它。</span>
+          </button>
+          <button class="choice" role="radio" aria-checked="false">
+            <span class="choice__head"><span class="choice__radio"></span><span class="choice__title">自主</span></span>
+            <span class="choice__desc">自己判断、自己写入，只在冲突时问你。适合长期跑的实验分支。</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ============ 审核阈值 ============ -->
+      <section class="sec" aria-labelledby="s-thresholds">
+        <div class="secHead">
+          <h2 class="secTitle" id="s-thresholds">审核阈值</h2>
+          <span class="secDesc">置信度落到哪一档，决定它是被记住、被搁置还是被拒</span>
+          <span class="secLine"></span>
+          <span class="source source--default">默认值</span>
+        </div>
+
+        <div class="thresholdGrid">
+          <label class="threshold">
+            <span class="threshold__label">自动接受 <span class="mono">accept</span></span>
+            <span class="field"><input class="input" type="text" value="0.60" inputmode="decimal"></span>
+          </label>
+          <label class="threshold">
+            <span class="threshold__label">待决 <span class="mono">defer</span></span>
+            <span class="field"><input class="input" type="text" value="0.35" inputmode="decimal"></span>
+          </label>
+          <label class="threshold">
+            <span class="threshold__label">拒绝 <span class="mono">reject</span></span>
+            <span class="field"><input class="input" type="text" value="0.10" inputmode="decimal"></span>
+          </label>
+          <label class="threshold">
+            <span class="threshold__label">去重 <span class="mono">duplicate</span></span>
+            <span class="field"><input class="input" type="text" value="0.95" inputmode="decimal"></span>
+          </label>
+          <label class="threshold">
+            <span class="threshold__label">召回门槛 <span class="mono">recall</span></span>
+            <span class="field"><input class="input" type="text" value="0.65" inputmode="decimal"></span>
+          </label>
+          <label class="threshold">
+            <span class="threshold__label">配额增速 <span class="mono">growth</span></span>
+            <span class="field"><input class="input" type="text" value="0.20" inputmode="decimal"></span>
+          </label>
+        </div>
+
+        <details class="advanced">
+          <summary>
+            <svg width="12" height="12"><use href="icons.svg#i-chevron-down"></use></svg>
+            高级：按内容类型分开设阈值
+            <span class="badge" style="margin-left: auto;">6 项</span>
+          </summary>
+          <div class="advanced__body">
+            <div class="thresholdGrid">
+              <label class="threshold">
+                <span class="threshold__label">决策 <span class="mono">decision</span></span>
+                <span class="field"><input class="input" type="text" value="0.70" inputmode="decimal"></span>
+              </label>
+              <label class="threshold">
+                <span class="threshold__label">坑 <span class="mono">pitfall</span></span>
+                <span class="field"><input class="input" type="text" value="0.65" inputmode="decimal"></span>
+              </label>
+              <label class="threshold">
+                <span class="threshold__label">事实 <span class="mono">fact</span></span>
+                <span class="field"><input class="input" type="text" value="0.60" inputmode="decimal"></span>
+              </label>
+              <label class="threshold">
+                <span class="threshold__label">约定 <span class="mono">convention</span></span>
+                <span class="field"><input class="input" type="text" value="0.60" inputmode="decimal"></span>
+              </label>
+              <label class="threshold">
+                <span class="threshold__label">能力 <span class="mono">capability</span></span>
+                <span class="field"><input class="input" type="text" value="0.65" inputmode="decimal"></span>
+              </label>
+              <label class="threshold">
+                <span class="threshold__label">纠错 <span class="mono">correction</span></span>
+                <span class="field"><input class="input" type="text" value="0.55" inputmode="decimal"></span>
+              </label>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- ============ 捕获 ============ -->
+      <section class="sec" aria-labelledby="s-capture">
+        <div class="secHead">
+          <h2 class="secTitle" id="s-capture">捕获</h2>
+          <span class="secDesc">对话里出现什么时，它才考虑记一条</span>
+          <span class="secLine"></span>
+          <span class="source source--project">项目配置</span>
+        </div>
+
+        <div class="toggleRow">
+          <div class="toggleRow__main">
+            <span class="toggleRow__title">自动捕获</span>
+            <p class="toggleRow__desc">关掉之后只能显式调用 <span class="mono">memory_remember</span>；已捕获的队列不会丢。</p>
+          </div>
+          <button class="switch" role="switch" aria-checked="true" aria-label="自动捕获"></button>
+        </div>
+
+        <div class="fieldRow">
+          <div class="fieldRow__main">
+            <span class="fieldRow__title">写入方式 <span class="mono">capture.mode</span></span>
+            <p class="fieldRow__desc">起草模式先生成六要素草稿再送审；直接模式跳起草，门更严。</p>
+          </div>
+          <div class="fieldRow__control">
+            <div class="segmented" role="tablist" aria-label="写入方式">
+              <button class="segmented__item" role="tab" aria-selected="true">起草</button>
+              <button class="segmented__item" role="tab" aria-selected="false">直接</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="fieldRow" style="grid-template-columns: minmax(0,1fr); align-items: start;">
+          <div class="fieldRow__main" style="gap: 10px;">
+            <span class="fieldRow__title">捕获信号 <span class="mono">capture.signals</span></span>
+            <div class="chips">
+              <button class="chip" aria-pressed="true"><span class="chip__code">S1</span>明确要求记住</button>
+              <button class="chip" aria-pressed="true"><span class="chip__code">S2</span>踩坑与修法</button>
+              <button class="chip" aria-pressed="true"><span class="chip__code">S3</span>口径与判据</button>
+              <button class="chip" aria-pressed="false"><span class="chip__code">S4</span>被纠正</button>
+              <button class="chip" aria-pressed="true"><span class="chip__code">S5</span>可复用的命令</button>
+              <button class="chip" aria-pressed="false"><span class="chip__code">S6</span>架构决策</button>
+            </div>
+            <p class="fieldRow__desc">勾掉的信号不会触发捕获，也不会进待决队列 —— 它是真的没被看见。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 召回 ============ -->
+      <section class="sec" aria-labelledby="s-recall">
+        <div class="secHead">
+          <h2 class="secTitle" id="s-recall">召回</h2>
+          <span class="secDesc">每次对话开始时，往上下文里塞多少</span>
+          <span class="secLine"></span>
+          <span class="source source--env">环境变量</span>
+        </div>
+
+        <div class="toggleRow">
+          <div class="toggleRow__main">
+            <span class="toggleRow__title">注入上下文 <span class="mono">recall.inject</span></span>
+            <p class="toggleRow__desc">关掉之后记忆仍在写入，只是不主动塞进提示词。</p>
+          </div>
+          <button class="switch" role="switch" aria-checked="true" aria-label="注入上下文"></button>
+        </div>
+
+        <div class="fieldRow">
+          <div class="fieldRow__main">
+            <span class="fieldRow__title">注入预算 <span class="mono">recall.maxBytes</span></span>
+            <p class="fieldRow__desc">被环境变量 <span class="mono">DSH_MEMORY_RECALL_MAX_BYTES</span> 覆盖，改这里不生效。</p>
+          </div>
+          <div class="fieldRow__control">
+            <div class="inputWrap">
+              <input class="input" type="text" value="4000" readonly>
+              <span class="inputWrap__badge"><span class="source source--env">env</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="fieldRow">
+          <div class="fieldRow__main">
+            <span class="fieldRow__title">指针条数 <span class="mono">recall.maxPointers</span></span>
+            <p class="fieldRow__desc">只给线索、不给原文的条数上限。超过预算时先丢指针，再丢正文。</p>
+          </div>
+          <div class="fieldRow__control">
+            <input class="input" type="text" value="20" inputmode="numeric">
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 配额 ============ -->
+      <section class="sec" aria-labelledby="s-quota">
+        <div class="secHead">
+          <h2 class="secTitle" id="s-quota">配额</h2>
+          <span class="secDesc">记忆太多时先变成负担，再变成噪音</span>
+          <span class="secLine"></span>
+          <span class="source source--project">项目配置</span>
+        </div>
+
+        <div class="grid2">
+          <label class="field">
+            <span class="field__labelRow">
+              <span class="field__label">本仓库上限</span>
+              <span class="source source--project">project</span>
+            </span>
+            <input class="input" type="text" value="50" inputmode="numeric">
+            <p class="field__hint">当前 42 / 50。到 50 条时新记忆会被拒，并提示先 <span class="mono">memory_forget</span> 退休一条。</p>
+          </label>
+          <label class="field">
+            <span class="field__labelRow">
+              <span class="field__label">增速阈值</span>
+              <span class="source source--default">default</span>
+            </span>
+            <input class="input" type="text" value="0.20" inputmode="decimal">
+            <p class="field__hint">单周增长超过 20% 时切换成棘轮模式：只能替换，不能新增。</p>
+          </label>
+        </div>
+      </section>
+
+      <!-- ============ 高级 ============ -->
+      <section class="sec" aria-labelledby="s-advanced">
+        <div class="secHead">
+          <h2 class="secTitle" id="s-advanced">高级</h2>
+          <span class="secDesc">改之前先读一遍 hint</span>
+          <span class="secLine"></span>
+        </div>
+
+        <div class="field">
+          <span class="field__labelRow">
+            <span class="field__label">六要素模板</span>
+            <span class="source source--project">project</span>
+          </span>
+          <div class="templateList">
+            <span class="templateChip">功能名<button aria-label="移除 功能名"><svg width="10" height="10"><use href="icons.svg#i-close"></use></svg></button></span>
+            <span class="templateChip">生效条件<button aria-label="移除 生效条件"><svg width="10" height="10"><use href="icons.svg#i-close"></use></svg></button></span>
+            <span class="templateChip">子功能<button aria-label="移除 子功能"><svg width="10" height="10"><use href="icons.svg#i-close"></use></svg></button></span>
+            <span class="templateChip">执行<button aria-label="移除 执行"><svg width="10" height="10"><use href="icons.svg#i-close"></use></svg></button></span>
+            <span class="templateChip">验证方式<button aria-label="移除 验证方式"><svg width="10" height="10"><use href="icons.svg#i-close"></use></svg></button></span>
+            <span class="templateChip">不适用条件<button aria-label="移除 不适用条件"><svg width="10" height="10"><use href="icons.svg#i-close"></use></svg></button></span>
+            <button class="chip" style="height: 26px; border-style: dashed;">
+              <svg width="10" height="10"><use href="icons.svg#i-plus"></use></svg>
+              加一项
+            </button>
+          </div>
+          <p class="field__hint">G2 门按这份标题清单判断「是不是讲了一件事」。多余的标题会被判成多主题，直接硬拒。</p>
+        </div>
+
+        <div class="field">
+          <span class="field__labelRow">
+            <span class="field__label">禁止出现的模式</span>
+            <span class="source source--default">default</span>
+          </span>
+          <textarea class="textarea" rows="3">CUSTOM_\d{8}
+DB_PASSWORD\s*=
+(?i)api[_-]?key\s*[:=]</textarea>
+          <p class="field__hint">每行一个正则。G3 安全门在写入前跑；命中即拒，并且只在审计日志里记序号，不复述内容。</p>
+        </div>
+
+        <div class="toggleRow">
+          <div class="toggleRow__main">
+            <span class="toggleRow__title">语义冲突检测 <span class="mono">conflict.semantic</span></span>
+            <p class="toggleRow__desc">用向量判断「两条记忆说的是同一件事但结论相反」。打开后每次写入多一次嵌入调用。</p>
+          </div>
+          <button class="switch" role="switch" aria-checked="false" aria-label="语义冲突检测"></button>
+        </div>
+
+        <div class="readonlyBox">
+          <svg class="readonlyBox__icon" width="15" height="15"><use href="icons.svg#i-shield"></use></svg>
+          <div class="readonlyBox__main">
+            <span class="readonlyBox__title">
+              语义通道
+              <span class="badge badge--warn">未开闸</span>
+              <span class="mono" style="color: var(--label-tertiary); font-size: 12px;">embedding.provider = none</span>
+            </span>
+            <p class="readonlyBox__desc">
+              不是漏了开关，是闸没开：本地实测的通道分离度只有 +0.063，够不到 0.15 的开工判据。
+              跑 <span class="mono">node bench/embedding-experiment.mjs</span> 拿到 ≥ 0.15 再回来。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 保存条 -->
+      <div class="saveBar">
+        <span class="saveBar__note"><b>3 项已修改</b> · 保存在 <span class="mono">.dsh-memory/config.json</span>，会进 git 随 PR review</span>
+        <button class="btn btn--ghost">放弃</button>
+        <button class="btn btn--ghost">重置为默认</button>
+        <button class="btn btn--primary">保存</button>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

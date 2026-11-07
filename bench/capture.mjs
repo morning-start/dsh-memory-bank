@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { buildCandidate, foldTurn, shouldCapture } from '../lib/capture.js'
-import { resolveConfig } from '../lib/config.js'
+import { resolveConfig } from '../lib/config/index.js'
 import { collectOwners, review } from '../lib/gate.js'
 import { ensureSnapshot, markDirty } from '../lib/index-build.js'
 import { normalizeId } from '../lib/model.js'

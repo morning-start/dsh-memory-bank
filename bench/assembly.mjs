@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { resolveConfig } from '../lib/config.js'
+import { resolveConfig } from '../lib/config/index.js'
 import { clearSnapshotCache, ensureSnapshot } from '../lib/index-build.js'
 import { recall } from '../lib/recall.js'
 import { clearStoreCache, invalidateCorpus, writeEntry } from '../lib/store.js'

@@ -18,7 +18,7 @@ import { join } from 'node:path'
 
 import { gateOwnership, collectOwners } from '../lib/gate.js'
 import { review } from '../lib/gate.js'
-import { resolveConfig } from '../lib/config.js'
+import { resolveConfig } from '../lib/config/index.js'
 
 const root = process.cwd()
 const cfg = resolveConfig({ autonomy: 'balanced' })

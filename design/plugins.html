@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="dsh-design" content="web">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>插件 · DeepSeek Harness</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  .pluginPage { gap: 28px; }
+  .pluginPage .segmented { margin-top: -4px; }
+  .installed { display: flex; flex-direction: column; gap: 2px; }
+
+  /* 记忆库卡片：本设计的入口，用左侧色条 + 略亮的底把它从列表里挑出来 */
+  .memCard {
+    position: relative;
+    margin: 0 -8px;
+    border-radius: var(--radius-xl);
+    background: linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--state-business) 9%, transparent),
+      color-mix(in srgb, var(--state-business) 2%, transparent) 42%,
+      transparent 74%
+    );
+    box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--state-business) 24%, transparent);
+    transition: background var(--duration-fast) var(--ease-in-out);
+  }
+  .memCard::before {
+    content: "";
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    left: 0;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: var(--state-business);
+  }
+  .memCard:hover {
+    background: linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--state-business) 13%, transparent),
+      color-mix(in srgb, var(--state-business) 4%, transparent) 42%,
+      transparent 74%
+    );
+  }
+  .memCard .cardIcon {
+    border-color: color-mix(in srgb, var(--state-business) 26%, transparent);
+    background: linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--state-business) 20%, transparent),
+      color-mix(in srgb, var(--state-business) 4%, transparent)
+    );
+    color: var(--state-business);
+  }
+  .memCard .cardTitle { font-size: 14px; font-weight: 600; }
+  .memStats {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--label-caption);
+    font-size: 12px;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  .memStats b { color: var(--label-secondary); font-weight: 500; }
+  .memStats i { font-style: normal; color: var(--border-l4); }
+
+  /* 下面几组用更弱的密度，突出记忆库 */
+  .quiet .cardTitle { color: var(--label-secondary); font-weight: 400; }
+  .quiet .cardIcon { background: transparent; }
+  .quiet .card:hover .cardTitle { color: var(--label-primary); }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============================ 侧栏 ============================ -->
+  <aside class="sidebar">
+    <div class="sidebar__logoRow">
+      <a class="brand" href="plugins.html" aria-label="DeepSeek Harness 首页">
+        <img class="brand__mark" src="brand.svg" alt="DeepSeek Harness" width="167" height="20">
+      </a>
+      <button class="iconBtn" aria-label="折叠侧栏">
+        <svg width="16" height="16"><use href="icons.svg#i-panel"></use></svg>
+      </button>
+    </div>
+
+    <button class="newSession">
+      <svg width="14" height="14"><use href="icons.svg#i-new"></use></svg>
+      新会话
+      <kbd>Ctrl Alt N</kbd>
+    </button>
+
+    <nav class="nav" aria-label="主导航">
+      <button class="navItem" aria-current="page">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-plugin"></use></svg></span>
+        插件
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-clock"></use></svg></span>
+        自动化任务
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-team"></use></svg></span>
+        myteam
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-plug"></use></svg></span>
+        MCP 连接器
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-more"></use></svg></span>
+        更多
+      </button>
+    </nav>
+
+    <div class="region">
+      <div class="region__head">
+        <span>工作区</span>
+        <button class="iconBtn" aria-label="搜索"><svg width="14" height="14"><use href="icons.svg#i-search"></use></svg></button>
+        <button class="iconBtn" aria-label="排序"><svg width="14" height="14"><use href="icons.svg#i-sort"></use></svg></button>
+        <button class="iconBtn" aria-label="新建文件夹"><svg width="14" height="14"><use href="icons.svg#i-folder-plus"></use></svg></button>
+      </div>
+      <div class="region__body">
+        <div class="ws">
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>dsh-myteam</button>
+          <button class="sessionRow" aria-current="true"><span class="sessionRow__title">新会话</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">team-dev</span><span class="sessionRow__time">45 分钟</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">dsh-talk-map 学习笔记</span><span class="sessionRow__time">13 小时</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">team 插件检查</span><span class="sessionRow__time">18 小时</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">根据文档检查功能</span><span class="sessionRow__time">21 小时</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">teamUI 设计</span><span class="sessionRow__time">1 天</span></button>
+        </div>
+        <div class="ws">
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>noval-studio</button>
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>dsh-memory-bank</button>
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>my_tube</button>
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>kwd-group</button>
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>db_workflow</button>
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>create-hive-db</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar__foot">
+      <button class="account">
+        <span class="avatar">山</span>
+        山野村夫
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============================ 主区 ============================ -->
+  <main class="main">
+    <div class="page pluginPage">
+      <header class="pageHead">
+        <div class="pageHead__main">
+          <h1 class="pageTitle">插件</h1>
+          <p class="pageIntro">
+            安装、启用和配置插件
+            <svg width="14" height="14" style="color: var(--label-caption)"><use href="icons.svg#i-info"></use></svg>
+          </p>
+        </div>
+        <div class="toolbar">
+          <button class="iconBtn" aria-label="刷新插件列表">
+            <svg width="16" height="16"><use href="icons.svg#i-refresh"></use></svg>
+          </button>
+          <div class="btnGroup">
+            <button class="btn btn--primary">
+              <svg width="14" height="14"><use href="icons.svg#i-plus"></use></svg>
+              添加插件
+            </button>
+            <button class="btn btn--primary btn--more" aria-label="更多添加方式">
+              <svg width="14" height="14"><use href="icons.svg#i-chevron-down"></use></svg>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div class="segmented" role="tablist" aria-label="插件视图">
+        <button class="segmented__item" role="tab" aria-selected="true">已安装</button>
+        <button class="segmented__item" role="tab" aria-selected="false">插件市场</button>
+      </div>
+
+      <!-- 内置插件配置 -->
+      <section class="group quiet" aria-labelledby="g-builtin">
+        <div class="groupHead"><h2 class="groupTitle" id="g-builtin">内置插件配置</h2></div>
+        <ul class="cards">
+          <li class="card">
+            <div class="cardHead">
+              <span class="cardIcon"><svg width="24" height="24" style="color:#7aaaff"><use href="icons.svg#i-team"></use></svg></span>
+              <div class="cardMain">
+                <div class="cardTitleRow"><span class="cardTitle">子智能体</span></div>
+                <span class="cardDesc">设置子智能体的递归层级、数量和模型。</span>
+              </div>
+              <div class="cardEnd">
+                <svg width="14" height="14" style="color: var(--label-caption)"><use href="icons.svg#i-chevron-right"></use></svg>
+              </div>
+            </div>
+          </li>
+          <li class="card">
+            <div class="cardHead">
+              <span class="cardIcon"><svg width="24" height="24" style="color:#7aaaff"><use href="icons.svg#i-search"></use></svg></span>
+              <div class="cardMain">
+                <div class="cardTitleRow"><span class="cardTitle">网页搜索</span></div>
+                <span class="cardDesc">设置 DeepSeek 的搜索提供方。</span>
+              </div>
+              <div class="cardEnd"><svg width="14" height="14" style="color: var(--label-caption)"><use href="icons.svg#i-chevron-right"></use></svg></div>
+            </div>
+          </li>
+          <li class="card">
+            <div class="cardHead">
+              <span class="cardIcon"><svg width="24" height="24" style="color:#7aaaff"><use href="icons.svg#i-history"></use></svg></span>
+              <div class="cardMain">
+                <div class="cardTitleRow"><span class="cardTitle">Agent 循环</span></div>
+                <span class="cardDesc">控制 Agent 派发工具调用的方式。</span>
+              </div>
+              <div class="cardEnd"><svg width="14" height="14" style="color: var(--label-caption)"><use href="icons.svg#i-chevron-right"></use></svg></div>
+            </div>
+          </li>
+          <li class="card">
+            <div class="cardHead">
+              <span class="cardIcon"><svg width="24" height="24" style="color:#7aaaff"><use href="icons.svg#i-doc"></use></svg></span>
+              <div class="cardMain">
+                <div class="cardTitleRow"><span class="cardTitle">终端</span></div>
+                <span class="cardDesc">限制每条命令最多能跑多久、最多输出多少内容。</span>
+              </div>
+              <div class="cardEnd"><svg width="14" height="14" style="color: var(--label-caption)"><use href="icons.svg#i-chevron-right"></use></svg></div>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- 已安装插件 -->
+      <section class="group" aria-labelledby="g-installed">
+        <div class="groupHead">
+          <h2 class="groupTitle" id="g-installed">已安装插件</h2>
+          <button class="groupMore">
+            管理全部
+            <svg width="12" height="12"><use href="icons.svg#i-chevron-right"></use></svg>
+          </button>
+        </div>
+
+        <ul class="cards">
+          <!-- 记忆库：本设计的入口 -->
+          <li class="memCard">
+            <div class="cardHead">
+              <span class="cardIcon">
+                <svg width="26" height="26"><use href="icons.svg#i-memory"></use></svg>
+              </span>
+              <div class="cardMain">
+                <div class="cardTitleRow">
+                  <span class="cardTitle">记忆库</span>
+                  <span class="badge badge--mono">v0.1.1</span>
+                  <span class="badge badge--ok">已启用</span>
+                </div>
+                <span class="cardDesc cardDesc--two">项目级记忆：Agent 自己判断该不该记，十道门自审，判不了的才交人裁决。</span>
+                <span class="memStats">
+                  <span><b>42</b> 条记忆</span>
+                  <i>·</i>
+                  <span><b>3</b> 待决</span>
+                  <i>·</i>
+                  <span><b>2</b> 条漂移</span>
+                  <i>·</i>
+                  <span>最近召回 4 分钟前</span>
+                </span>
+              </div>
+              <div class="cardEnd">
+                <a class="btn btn--secondary btn--sm" href="plugin-config.html">配置</a>
+                <button class="switch" role="switch" aria-checked="true" aria-label="启用记忆库"></button>
+              </div>
+            </div>
+          </li>
+
+          <li class="card">
+            <div class="cardHead">
+              <span class="cardIcon"><svg width="24" height="24" style="color:#b7c8fe"><use href="icons.svg#i-database"></use></svg></span>
+              <div class="cardMain">
+                <div class="cardTitleRow">
+                  <span class="cardTitle">Bireturn 数据工人</span>
+                  <span class="badge badge--mono">0.4.2</span>
+                </div>
+                <span class="cardDesc">host 平面 6 个 bireturn_* 记忆工具，项目本地 / 全局双层记忆协议与可靠 outbox。</span>
+              </div>
+              <div class="cardEnd">
+                <button class="switch" role="switch" aria-checked="true" aria-label="启用 Bireturn 数据工人"></button>
+              </div>
+            </div>
+          </li>
+
+          <li class="card">
+            <div class="cardHead">
+              <span class="cardIcon"><svg width="24" height="24" style="color:#b7c8fe"><use href="icons.svg#i-panel"></use></svg></span>
+              <div class="cardMain">
+                <div class="cardTitleRow">
+                  <span class="cardTitle">设计工作台</span>
+                  <span class="badge">内置</span>
+                </div>
+                <span class="cardDesc">右侧栏的设计工作台：网页、App、小程序、海报一屏屏生成在画布上。</span>
+              </div>
+              <div class="cardEnd">
+                <button class="switch" role="switch" aria-checked="true" aria-label="启用设计工作台"></button>
+              </div>
+            </div>
+          </li>
+
+          <li class="card">
+            <div class="cardHead">
+              <span class="cardIcon"><svg width="24" height="24" style="color:#b7c8fe"><use href="icons.svg#i-team"></use></svg></span>
+              <div class="cardMain">
+                <div class="cardTitleRow">
+                  <span class="cardTitle">myteam 团队</span>
+                  <span class="badge badge--mono">0.9.0</span>
+                </div>
+                <span class="cardDesc">DSH 内的独立多智能体团队运行时：任务账本、状态机、质量门禁、角色库与可视化面板。</span>
+              </div>
+              <div class="cardEnd">
+                <button class="switch" role="switch" aria-checked="true" aria-label="启用 myteam 团队"></button>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </section>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="dsh-design" content="web">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>项目配置 · DeepSeek Harness</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  .settingsPanel { position: relative; }
+
+  /* 抽屉：从设置面板右侧滑出，压住「记忆」页 */
+  .drawerScrim {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    background: color-mix(in srgb, var(--bg-base) 25%, transparent);
+    backdrop-filter: blur(1px);
+  }
+  .drawer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    width: 440px;
+    border-left: 0.5px solid var(--border-l3);
+    border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
+    background: var(--bg-layer-2);
+    box-shadow: -18px 0 48px -18px #000;
+    overflow: hidden;
+  }
+  .drawer__head {
+    display: flex;
+    flex: none;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 22px 20px 16px 22px;
+  }
+  .drawer__headMain { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+  .drawer__title { margin: 0; font-size: 15px; font-weight: 500; line-height: 22px; }
+  .drawer__sub { margin: 0; color: var(--label-tertiary); font-size: 12px; line-height: 18px; }
+  .drawer__sub .mono { color: var(--label-secondary); font-size: 12px; word-break: break-all; }
+
+  .drawer__body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 0;
+    padding: 0 22px 18px;
+    overflow-y: auto;
+  }
+
+  .notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 10px 12px;
+    border: 0.5px solid color-mix(in srgb, var(--state-warn) 26%, transparent);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--state-warn) 8%, transparent);
+    color: var(--label-secondary);
+    font-size: 12px;
+    line-height: 18px;
+  }
+  .notice svg { margin-top: 1px; color: var(--state-warn-secondary); }
+  .notice b { color: var(--label-primary); font-weight: 500; }
+
+  .field { gap: 7px; }
+  .field__labelRow { justify-content: space-between; }
+  .field__label { font-size: 12.5px; }
+
+  .chips .chip { height: 26px; font-size: 12px; }
+
+  .jsonPreview {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .jsonPreview__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--label-tertiary);
+    font-size: 12px;
+  }
+  .jsonPreview__head .mono { color: var(--label-secondary); font-size: 12px; }
+  .json {
+    margin: 0;
+    padding: 12px 14px;
+    border: 0.5px solid var(--border-l2);
+    border-radius: var(--radius-md);
+    background: var(--markdown-code-block);
+    color: var(--label-secondary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 19px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .json .k { color: #b7c8fe; }
+  .json .s { color: #8ce99a; }
+  .json .n { color: #ffd8a8; }
+  .json .c { color: var(--label-caption); }
+
+  .inheritBox {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 0.5px solid var(--border-l2);
+    border-radius: var(--radius-md);
+    background: var(--bg-layer-1);
+  }
+  .inheritBox__title { display: flex; align-items: center; gap: 6px; color: var(--label-secondary); font-size: 12.5px; }
+  .inheritList { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .inheritList li {
+    padding: 2px 7px;
+    border-radius: var(--radius-xs);
+    background: var(--bg-layer-3);
+    color: var(--label-tertiary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  .drawer__foot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 22px 18px;
+    border-top: 0.5px solid var(--border-l2);
+    background: var(--bg-layer-2);
+  }
+  .drawer__foot .caption { flex: 1; }
+
+  /* 抽屉后面的设置页：整块隐藏，只留左侧导航做上下文 */
+  .ghost { visibility: hidden; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" aria-hidden="true">
+    <div class="sidebar__logoRow">
+      <a class="brand" href="plugins.html"><img class="brand__mark" src="brand.svg" alt="DeepSeek Harness" width="167" height="20"></a>
+      <button class="iconBtn" aria-label="折叠侧栏"><svg width="16" height="16"><use href="icons.svg#i-panel"></use></svg></button>
+    </div>
+    <button class="newSession"><svg width="14" height="14"><use href="icons.svg#i-new"></use></svg>新会话<kbd>Ctrl Alt N</kbd></button>
+    <nav class="nav">
+      <button class="navItem"><span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-plugin"></use></svg></span>插件</button>
+      <button class="navItem"><span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-clock"></use></svg></span>自动化任务</button>
+      <button class="navItem"><span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-team"></use></svg></span>myteam</button>
+      <button class="navItem"><span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-plug"></use></svg></span>MCP 连接器</button>
+      <button class="navItem"><span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-more"></use></svg></span>更多</button>
+    </nav>
+    <div class="region">
+      <div class="region__head"><span>工作区</span></div>
+      <div class="region__body">
+        <div class="ws">
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>dsh-myteam</button>
+          <button class="sessionRow" aria-current="true"><span class="sessionRow__title">新会话</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">team-dev</span><span class="sessionRow__time">52 分钟</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">dsh-talk-map 学习笔记</span><span class="sessionRow__time">13 小时</span></button>
+        </div>
+        <div class="ws">
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>dsh-memory-bank</button>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar__foot"><button class="account"><span class="avatar">山</span>山野村夫</button></div>
+  </aside>
+
+  <main class="main" aria-hidden="true">
+    <div class="page"><div style="padding-top:28px"><h1 class="pageTitle">插件</h1></div></div>
+  </main>
+</div>
+
+<div class="overlay">
+  <div class="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="settingsPanel__nav">
+      <div class="settingsPanel__navTitle" id="settingsTitle">设置</div>
+      <div class="settingsPanel__navList">
+        <button class="navCell"><span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-user"></use></svg></span><span class="navCell__label">账号与余额</span></button>
+        <button class="navCell"><span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-settings"></use></svg></span><span class="navCell__label">通用设置</span></button>
+        <button class="navCell"><span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-new"></use></svg></span><span class="navCell__label">手机访问</span></button>
+        <button class="navCell"><span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-doc"></use></svg></span><span class="navCell__label">模型</span></button>
+        <button class="navCell"><span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-sort"></use></svg></span><span class="navCell__label">内置插件</span></button>
+        <button class="navCell"><span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-team"></use></svg></span><span class="navCell__label">Agent 预设</span></button>
+        <button class="navCell" aria-current="page"><span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-memory"></use></svg></span><span class="navCell__label">记忆</span><span class="badge badge--warn">3</span></button>
+        <button class="navCell"><span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-shield"></use></svg></span><span class="navCell__label">Everforest</span></button>
+      </div>
+    </div>
+
+    <!-- 背景：记忆页（被遮住） -->
+    <div class="settingsPanel__content ghost" aria-hidden="true">
+      <div class="settingsPanel__header">
+        <button class="btn btn--secondary btn--sm">打开配置文件</button>
+        <button class="btn btn--ghost btn--sm" style="width:28px;padding:0"><svg width="14" height="14"><use href="icons.svg#i-close"></use></svg></button>
+      </div>
+      <div class="settingsPanel__options">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="health" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px">
+            <div class="health__cell"><span class="health__num">42</span></div>
+            <div class="health__cell"><span class="health__num">3</span></div>
+            <div class="health__cell"><span class="health__num">2</span></div>
+            <div class="health__cell"><span class="health__num">42/50</span></div>
+          </div>
+          <div class="tabs"><button class="tab" aria-selected="true">待决</button><button class="tab">记忆</button><button class="tab">漂移</button><button class="tab">审计</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="drawerScrim" aria-hidden="true"></div>
+
+    <!-- 抽屉本体 -->
+    <aside class="drawer" aria-labelledby="drawerTitle">
+      <div class="drawer__head">
+        <div class="drawer__headMain">
+          <h2 class="drawer__title" id="drawerTitle">项目配置</h2>
+          <p class="drawer__sub">只对这个仓库生效 · <span class="mono">.dsh-memory/config.json</span></p>
+        </div>
+        <button class="btn btn--ghost btn--sm" aria-label="关闭项目配置" style="width:28px;padding:0;height:28px">
+          <svg width="14" height="14"><use href="icons.svg#i-close"></use></svg>
+        </button>
+      </div>
+
+      <div class="drawer__body">
+        <div class="notice">
+          <svg width="14" height="14"><use href="icons.svg#i-alert"></use></svg>
+          <span>这里的字段会<b>进 git、随 PR review</b>。它是团队共识，不是个人偏好。</span>
+        </div>
+
+        <div class="toggleRow" style="padding:0">
+          <div class="toggleRow__main">
+            <span class="toggleRow__title">自动捕获 <span class="mono" style="color:var(--label-tertiary);font-size:12px">capture.enabled</span></span>
+            <p class="toggleRow__desc">这个仓库暂时不要自动写入记忆。</p>
+          </div>
+          <button class="switch" role="switch" aria-checked="true" aria-label="自动捕获"></button>
+        </div>
+
+        <label class="field">
+          <span class="field__labelRow">
+            <span class="field__label">本仓库上限 <span class="mono" style="color:var(--label-tertiary);font-size:12px">quota.repo</span></span>
+            <span class="source source--project">project</span>
+          </span>
+          <input class="input" type="text" value="50" inputmode="numeric">
+          <p class="field__hint">小仓库可以调到 20；调到 0 表示不限。</p>
+        </label>
+
+        <div class="field">
+          <span class="field__labelRow">
+            <span class="field__label">六要素模板 <span class="mono" style="color:var(--label-tertiary);font-size:12px">template</span></span>
+            <span class="source source--project">project</span>
+          </span>
+          <div class="chips">
+            <span class="chip" aria-pressed="true">功能名</span>
+            <span class="chip" aria-pressed="true">生效条件</span>
+            <span class="chip" aria-pressed="true">子功能</span>
+            <span class="chip" aria-pressed="true">执行</span>
+            <span class="chip" aria-pressed="true">验证方式</span>
+            <span class="chip" aria-pressed="true">不适用条件</span>
+            <button class="chip" style="border-style:dashed"><svg width="10" height="10"><use href="icons.svg#i-plus"></use></svg>加一项</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field__labelRow">
+            <span class="field__label">禁止模式 <span class="mono" style="color:var(--label-tertiary);font-size:12px">safety.forbidden</span></span>
+          </span>
+          <textarea class="textarea" rows="2" style="min-height:52px">CUSTOM_\d{8}
+DB_PASSWORD\s*=</textarea>
+          <p class="field__hint">每行一个正则，只在本仓库生效。</p>
+        </div>
+
+        <div class="inheritBox">
+          <span class="inheritBox__title">
+            <svg width="12" height="12"><use href="icons.svg#i-info"></use></svg>
+            其余 7 项不在这里，去「插件 → 记忆库 → 配置」改
+          </span>
+          <ul class="inheritList">
+            <li>autonomy</li>
+            <li>thresholds</li>
+            <li>recall</li>
+            <li>embedding</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="drawer__foot">
+        <span class="caption">写回 <span class="mono" style="color:var(--label-secondary)">config.json</span>，立即生效</span>
+        <button class="btn btn--ghost">取消</button>
+        <button class="btn btn--primary">保存</button>
+      </div>
+    </aside>
+  </div>
+</div>
+</body>
+</html>

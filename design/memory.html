@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="dsh-design" content="web">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设置 · 记忆 · DeepSeek Harness</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  /* 设置弹窗里的「记忆」页：内容宽 612，用紧凑的列表而不是表格 */
+  .memPanel { display: flex; flex-direction: column; gap: 18px; }
+
+  .memHead { display: flex; flex-direction: column; gap: 4px; }
+  .memTitle { margin: 0; font-size: 16px; font-weight: 500; line-height: 22px; }
+  .memSub { margin: 0; color: var(--label-tertiary); font-size: 12px; line-height: 18px; }
+
+  /* 健康概览 */
+  .health {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1px;
+    border: 0.5px solid var(--border-l2);
+    border-radius: var(--radius-md);
+    background: var(--border-l1);
+    overflow: hidden;
+  }
+  .health__cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 12px;
+    background: var(--bg-layer-1);
+  }
+  .health__num {
+    color: var(--label-primary);
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 22px;
+    font-variant-numeric: tabular-nums;
+  }
+  .health__num small { margin-left: 2px; color: var(--label-tertiary); font-size: 12px; font-weight: 400; }
+  .health__label { display: flex; align-items: center; gap: 5px; color: var(--label-tertiary); font-size: 12px; line-height: 16px; }
+  .health__cell[data-tone="warn"] .health__num { color: var(--state-warn-secondary); }
+  .health__cell[data-tone="error"] .health__num { color: var(--state-error); }
+  .health__cell[data-tone="ok"] .health__num { color: var(--label-primary); }
+
+  .healthFoot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: -8px;
+    color: var(--label-tertiary);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .healthFoot b { color: var(--label-secondary); font-weight: 500; }
+
+  /* 待决列表 */
+  .proposals { display: flex; flex-direction: column; gap: 8px; }
+  .proposal {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 0.5px solid var(--border-l2);
+    border-radius: var(--radius-md);
+    background: var(--bg-layer-1);
+    transition: border-color var(--duration-fast) var(--ease-in-out);
+  }
+  .proposal:hover { border-color: var(--border-l3); }
+  .proposal[data-open="true"] {
+    border-color: color-mix(in srgb, var(--state-business) 30%, transparent);
+    background: color-mix(in srgb, var(--state-business) 5%, var(--bg-layer-1));
+  }
+  .proposal__top { display: flex; align-items: center; gap: 8px; }
+  .proposal__title { flex: 1; min-width: 0; color: var(--label-primary); font-size: 13px; font-weight: 500; line-height: 20px; }
+  .proposal__conf {
+    flex: none;
+    color: var(--label-secondary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .proposal__reason { margin: 0; color: var(--label-tertiary); font-size: 12px; line-height: 18px; }
+  .proposal__reason code {
+    padding: 1px 4px;
+    border-radius: var(--radius-xs);
+    background: var(--bg-module-platform);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--label-secondary);
+  }
+  .proposal__actions { display: flex; align-items: center; gap: 6px; }
+  .proposal__meta { margin-left: auto; color: var(--label-tertiary); font-size: 12px; }
+
+  .queueNote {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 9px 12px;
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--state-warn) 10%, transparent);
+    color: var(--label-secondary);
+    font-size: 12px;
+    line-height: 18px;
+  }
+  .queueNote svg { margin-top: 1px; color: var(--state-warn-secondary); }
+
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 36px 16px;
+    border: 0.5px dashed var(--border-l3);
+    border-radius: var(--radius-md);
+    text-align: center;
+  }
+  .empty__title { color: var(--label-secondary); font-size: 13px; line-height: 20px; }
+  .empty__desc { max-width: 380px; margin: 0; color: var(--label-caption); font-size: 12px; line-height: 18px; }
+
+  .memTabs { margin-top: 0; }
+  .memTabs .tab { font-size: 13px; }
+
+  a.link { color: var(--state-business); }
+  a.link:hover { text-decoration: underline; text-underline-offset: 3px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- 侧栏（设置弹窗打开时的背景态） -->
+  <aside class="sidebar" aria-hidden="true">
+    <div class="sidebar__logoRow">
+      <a class="brand" href="plugins.html">
+        <img class="brand__mark" src="brand.svg" alt="DeepSeek Harness" width="167" height="20">
+      </a>
+      <button class="iconBtn" aria-label="折叠侧栏">
+        <svg width="16" height="16"><use href="icons.svg#i-panel"></use></svg>
+      </button>
+    </div>
+    <button class="newSession">
+      <svg width="14" height="14"><use href="icons.svg#i-new"></use></svg>
+      新会话
+      <kbd>Ctrl Alt N</kbd>
+    </button>
+    <nav class="nav" aria-label="主导航">
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-plugin"></use></svg></span>
+        插件
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-clock"></use></svg></span>
+        自动化任务
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-team"></use></svg></span>
+        myteam
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-plug"></use></svg></span>
+        MCP 连接器
+      </button>
+      <button class="navItem">
+        <span class="navItem__glyph"><svg width="16" height="16"><use href="icons.svg#i-more"></use></svg></span>
+        更多
+      </button>
+    </nav>
+    <div class="region">
+      <div class="region__head">
+        <span>工作区</span>
+        <button class="iconBtn" aria-label="搜索"><svg width="14" height="14"><use href="icons.svg#i-search"></use></svg></button>
+        <button class="iconBtn" aria-label="排序"><svg width="14" height="14"><use href="icons.svg#i-sort"></use></svg></button>
+        <button class="iconBtn" aria-label="新建文件夹"><svg width="14" height="14"><use href="icons.svg#i-folder-plus"></use></svg></button>
+      </div>
+      <div class="region__body">
+        <div class="ws">
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>dsh-myteam</button>
+          <button class="sessionRow" aria-current="true"><span class="sessionRow__title">新会话</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">team-dev</span><span class="sessionRow__time">52 分钟</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">dsh-talk-map 学习笔记</span><span class="sessionRow__time">13 小时</span></button>
+          <button class="sessionRow"><span class="sessionRow__title">team 插件检查</span><span class="sessionRow__time">18 小时</span></button>
+        </div>
+        <div class="ws">
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>dsh-memory-bank</button>
+          <button class="wsRow"><svg width="14" height="14"><use href="icons.svg#i-folder"></use></svg>noval-studio</button>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar__foot">
+      <button class="account"><span class="avatar">山</span>山野村夫</button>
+    </div>
+  </aside>
+
+  <main class="main" aria-hidden="true">
+    <div class="page">
+      <div style="padding-top: 28px; display: flex; flex-direction: column; gap: 12px;">
+        <h1 class="pageTitle">插件</h1>
+        <p class="pageIntro">安装、启用和配置插件</p>
+      </div>
+      <div class="cards">
+        <div class="card"><div class="cardHead">
+          <span class="cardIcon"><svg width="24" height="24"><use href="icons.svg#i-memory"></use></svg></span>
+          <div class="cardMain"><span class="cardTitle">记忆库</span><span class="cardDesc">项目级记忆：Agent 自己判断该不该记，十道门自审，判不了的才交人裁决。</span></div>
+        </div></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ============================ 设置弹窗 ============================ -->
+<div class="overlay">
+  <div class="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="settingsPanel__nav">
+      <div class="settingsPanel__navTitle" id="settingsTitle">设置</div>
+      <div class="settingsPanel__navList">
+        <button class="navCell">
+          <span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-user"></use></svg></span>
+          <span class="navCell__label">账号与余额</span>
+        </button>
+        <button class="navCell">
+          <span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-settings"></use></svg></span>
+          <span class="navCell__label">通用设置</span>
+        </button>
+        <button class="navCell">
+          <span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-new"></use></svg></span>
+          <span class="navCell__label">手机访问</span>
+        </button>
+        <button class="navCell">
+          <span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-doc"></use></svg></span>
+          <span class="navCell__label">模型</span>
+        </button>
+        <button class="navCell">
+          <span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-sort"></use></svg></span>
+          <span class="navCell__label">内置插件</span>
+        </button>
+        <button class="navCell">
+          <span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-team"></use></svg></span>
+          <span class="navCell__label">Agent 预设</span>
+        </button>
+        <button class="navCell" aria-current="page">
+          <span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-memory"></use></svg></span>
+          <span class="navCell__label">记忆</span>
+          <span class="badge badge--warn">3</span>
+        </button>
+        <button class="navCell">
+          <span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-shield"></use></svg></span>
+          <span class="navCell__label">Everforest</span>
+        </button>
+        <button class="navCell">
+          <span class="navCell__glyph"><svg width="16" height="16"><use href="icons.svg#i-more"></use></svg></span>
+          <span class="navCell__label">插件市场</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="settingsPanel__content">
+      <div class="settingsPanel__header">
+        <button class="btn btn--secondary btn--sm">打开配置文件</button>
+        <button class="btn btn--ghost btn--sm" aria-label="关闭设置" style="width: 28px; padding: 0;">
+          <svg width="14" height="14"><use href="icons.svg#i-close"></use></svg>
+        </button>
+      </div>
+
+      <div class="settingsPanel__options">
+        <div class="memPanel">
+          <div class="memHead">
+            <h2 class="memTitle">记忆</h2>
+            <p class="memSub">本仓库 <span class="mono" style="color: var(--label-secondary)">dsh-memory-bank</span> 的记忆库健康度与待决队列。</p>
+          </div>
+
+          <!-- 健康概览 -->
+          <div class="health">
+            <div class="health__cell" data-tone="ok">
+              <span class="health__num">42</span>
+              <span class="health__label"><span class="dot dot--ok"></span>活跃</span>
+            </div>
+            <div class="health__cell" data-tone="warn">
+              <span class="health__num">3</span>
+              <span class="health__label"><span class="dot dot--warn"></span>待决</span>
+            </div>
+            <div class="health__cell" data-tone="error">
+              <span class="health__num">2</span>
+              <span class="health__label"><span class="dot dot--error"></span>漂移</span>
+            </div>
+            <div class="health__cell" data-tone="ok">
+              <span class="health__num">42<small>/50</small></span>
+              <span class="health__label">配额</span>
+            </div>
+          </div>
+
+          <div class="healthFoot">
+            <span>open <b>7</b>（可行动 <b>3</b>）</span>
+          <span style="color: var(--label-tertiary)">·</span>
+            <span>矛盾 <b>2</b></span>
+          <span style="color: var(--label-tertiary)">·</span>
+            <span>休眠 <b>9</b></span>
+          <span style="color: var(--label-tertiary)">·</span>
+            <span>到期 <b>4</b></span>
+          <span style="color: var(--label-tertiary)">·</span>
+            <span>队列 <b>0</b></span>
+          </div>
+
+          <!-- tab -->
+          <div class="tabs memTabs" role="tablist" aria-label="记忆视图">
+            <button class="tab" role="tab" aria-selected="true">待决<span class="tab__count">3</span></button>
+            <button class="tab" role="tab" aria-selected="false">记忆<span class="tab__count">42</span></button>
+            <button class="tab" role="tab" aria-selected="false">漂移<span class="tab__count">2</span></button>
+            <button class="tab" role="tab" aria-selected="false">审计</button>
+          </div>
+
+          <!-- 待决列表 -->
+          <div class="proposals" role="tabpanel" aria-label="待决">
+            <article class="proposal" data-open="true">
+              <div class="proposal__top">
+                <span class="badge badge--info">决策</span>
+                <span class="proposal__title">连接池上限按 CPU 核数 × 2 定</span>
+                <span class="proposal__conf">0.51</span>
+              </div>
+              <p class="proposal__reason">
+                <code>G1</code> 归属门未过：正文提到了锚点，但 <code>scope</code> 为空，判据 3–5 全部落空。
+                补一条 <code>scope</code> 或把锚点写进正文就能过。
+              </p>
+              <div class="proposal__actions">
+                <button class="btn btn--primary btn--sm">通过</button>
+                <button class="btn btn--secondary btn--sm">编辑</button>
+                <button class="btn btn--danger btn--sm">拒绝</button>
+                <span class="proposal__meta">2 分钟前 · 第 1 次提交</span>
+              </div>
+            </article>
+
+            <article class="proposal">
+              <div class="proposal__top">
+                <span class="badge badge--info">坑</span>
+                <span class="proposal__title">Windows 上 rename 可以覆盖已存在文件</span>
+                <span class="proposal__conf">0.468</span>
+              </div>
+              <p class="proposal__reason">
+                <code>G5</code> 去重门：和 <code>atomic-write-window</code> 的相似度 0.91，未到 0.95。
+                要么合并进那一条，要么说明为什么是两件事。
+              </p>
+              <div class="proposal__actions">
+                <button class="btn btn--primary btn--sm">通过</button>
+                <button class="btn btn--secondary btn--sm">编辑</button>
+                <button class="btn btn--danger btn--sm">拒绝</button>
+                <span class="proposal__meta">1 小时前 · 第 1 次提交</span>
+              </div>
+            </article>
+
+            <article class="proposal">
+              <div class="proposal__top">
+                <span class="badge badge--info">约定</span>
+                <span class="proposal__title">前端颜色只用 --dsw-alias-* token</span>
+                <span class="proposal__conf">0.436</span>
+              </div>
+              <p class="proposal__reason">
+                <code>G4</code> 证据门：锚点 <code>docs/02-设计.md:288</code> 能打开，但那一行没有提到 token。
+                换一个更准的行号，或者补一条 <code>doc</code> 锚点。
+              </p>
+              <div class="proposal__actions">
+                <button class="btn btn--primary btn--sm">通过</button>
+                <button class="btn btn--secondary btn--sm">编辑</button>
+                <button class="btn btn--danger btn--sm">拒绝</button>
+                <span class="proposal__meta">3 小时前 · 第 1 次提交</span>
+              </div>
+            </article>
+          </div>
+
+          <div class="queueNote">
+            <svg width="14" height="14"><use href="icons.svg#i-alert"></use></svg>
+            <span>
+              队列里还有 <b>0</b> 条未处理。它们已经落盘在
+              <span class="mono">.dsh-memory/inbox/</span>，重启后仍然在。
+            </span>
+          </div>
+
+          <p class="caption" style="margin: 0">
+            为什么会有积压？<a class="link" href="plugin-config.html">调低「自动接受」阈值</a>，或者
+            <a class="link" href="plugin-config.html">换一种自主度</a>。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

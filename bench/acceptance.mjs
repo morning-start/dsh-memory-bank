@@ -7,9 +7,9 @@
 
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 
-import { resolveConfig } from '../lib/config.js'
+import { fixedConfigSource, resolveConfig } from '../lib/config/index.js'
 import { createMemoryCommand } from '../lib/command.js'
 import { createHooks } from '../lib/hooks.js'
 import { recall } from '../lib/recall.js'
@@ -38,7 +38,7 @@ function fresh() {
   writeFileSync(join(root, 'src', 'db', 'pool.ts'), 'export const DB_POOL_MAX = 10\n', 'utf8')
   writeFileSync(join(root, 'AGENTS.md'), '# AGENTS\n\n提交前跑 lint。\n', 'utf8')
   const cfg = resolveConfig({ autonomy: 'balanced' })
-  const tools = createToolDefinitions({ resolveRoot: () => root, cfg, log: () => {} })
+  const tools = createToolDefinitions({ resolveRoot: () => root, configSource: fixedConfigSource(cfg), log: () => {} })
   const tool = (name) => (args) => tools.find((item) => item.name === name).run(args, { agent: null })
   return { root, cfg, tools, tool }
 }
@@ -80,7 +80,7 @@ check('1', '装进 profile 后能看到工具与 prompt context', () => {
     on: () => () => {},
     systemPrompt: { context: (spec) => { captured = spec; return () => {} } },
   }
-  const hooks = createHooks({ ctx, cfg: resolveConfig({}), resolveRoot: () => '/tmp/x', log: () => {} })
+  const hooks = createHooks({ ctx, configSource: fixedConfigSource(resolveConfig({})), resolveRoot: () => '/tmp/x', log: () => {} })
   hooks.install()
   assert(captured, '没有注册 systemPrompt.context')
   assert(captured.order === 130, `order=${captured.order}`)
@@ -180,7 +180,7 @@ check('4', '矛盾记忆 → DEFER，pending 能看到，命令面能 accept/rej
   }
 
   const proposals = readProposals(root)
-  const command = createMemoryCommand({ resolveRoot: () => root, cfg, log: () => {} })
+  const command = createMemoryCommand({ resolveRoot: () => root, configSource: fixedConfigSource(cfg), log: () => {} })
 
   // 命令面必须能列出并裁决
   const status = command.handler({ rawInput: '', agent: null })
@@ -241,13 +241,19 @@ check('6', '无关查询 → abstain 并说出拒的是哪道门', () => {
 /* ── 7 · 全流程零网络调用 ──────────────────────────────────────── */
 
 check('7', '全流程零网络调用', () => {
-  // **扫目录，不列清单。** 硬编码的文件名列表每加一个模块就要手动同步，
+  // **递归扫，不列清单。** 硬编码的文件名列表每加一个模块就要手动同步，
   // 而漏掉的那个恰好是唯一发网络请求的模块时，这条检查会**通过**。
-  const files = readdirSync(join(process.cwd(), 'lib'))
+  //
+  // 必须递归：`lib/config/` 是子目录，扁平的 `readdirSync` 只看得到
+  // `config` 这个目录名，里面一个文件都不会被读 —— 于是「新增子目录」
+  // 这条检查会静默少扫一堆模块，正好是它想防的那件事。
+  const libDir = join(process.cwd(), 'lib')
+  const files = readdirSync(libDir, { recursive: true })
+    .map((entry) => String(entry).split(sep).join('/'))
     .filter((name) => name.endsWith('.js'))
     .sort()
   assert(files.length >= 19, `lib/ 只有 ${files.length} 个模块，比预期少 —— 检查是不是扫错目录`)
-  const source = files.map((file) => readFileSync(join(process.cwd(), 'lib', file), 'utf8')).join('\n')
+  const source = files.map((file) => readFileSync(join(libDir, ...file.split('/')), 'utf8')).join('\n')
   const forbidden = [/\bfetch\s*\(/, /require\(['"]https?['"]\)/, /from\s+['"]node:https?['"]/, /\baxios\b/]
   for (const pattern of forbidden) {
     assert(!pattern.test(source), `发现网络调用：${pattern}`)
