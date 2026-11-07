@@ -6,6 +6,78 @@
 
 ---
 
+## [0.3.1] - 2026-11-07
+
+> 这一版只做一件事：**合并（consolidate）不得放大权威**。
+> 三处取反叠加的效果是「这条记忆合并之后看起来更可信、更安全、更新」——
+> 而原始条目已经 `deprecated` + `supersedes` 边，**升级不可回退**。
+
+### Fixed · 合并把 `stale` 洗成 `verified`
+
+- **根因**：`lib/lifecycle.js` 的 `consolidate` 写的是 `confidence: best.confidence`，
+  而 `bestOf` 按 `CONFIDENCE_RANK` 取**最大值**。于是一条 `verified` 加一条 `stale`
+  合并出来是 `verified`：陈旧断言被抬成已验证。
+- **为什么取 min 是唯一正确的**：合并产物是「多条断言拼起来的一段话」，只要其中
+  一条不成立，整段就不成立 —— 它的可信度上限是**最弱那一环**。这与同一函数里
+  `provenance: 'self-concluded'`（同样是最弱值）是同一条纪律：**派生不能比来源更可信。**
+- **修法**：新增 `weakestConfidence(entries)`，未知标签按 `inferred` 兜底 ——
+  不让「没写」变成「最信」。
+- **回归**：`test/lifecycle.test.mjs` ·「合并 · 权威只能保持或降低」。
+
+### Fixed · 合并把 `R5` 降成 `R1`（警告消失）
+
+- **根因**：同一处 `actionRisk: best.actionRisk` —— 而 `bestOf` 选的是「最适合当代表」
+  的那条，代表往往是**最温和**的那条。于是 `R5` 和 `R1` 合并得到 `R1`：一条涉及
+  不可逆操作、本该提示「照做之前回读原文」的记忆，合并之后**警告消失了**。
+- **为什么取 max**：风险是**后果**的属性，不是**文本质量**的属性 —— 多条里只要
+  有一条会造成不可逆后果，合并产物就必须继承它。
+- **修法**：`worstActionRisk(entries)`，缺风险按 `R1` 兜底（与 `index-build` /
+  `store` 同口径）。
+- **回归**：同上。
+
+### Fixed · 合并给产物盖上「刚刚验证过」的时间戳
+
+- **根因**：`consolidate` 写的是 `lastVerifiedAt: now`，而 `writeEntry` 是
+  `entry.lastVerifiedAt ?? now` —— 显式的 `now` 原样留下。但人批准的是
+  「这两条该合并」，不是「合并后这段话准确」。
+- **后果**：读这个字段的有三处 —— `recall` 的新鲜度、`weakness` 的陈旧度、
+  `promote` 的 `dormant` 标记，**三处都会因为这次「验证」而放宽**。
+- **修法**：`consolidate` 传显式 `null`（语义：从没验证过）；`writeEntry` 的兜底
+  从 `?? now` 改成 `entry.lastVerifiedAt === undefined ? now : ...` ——
+  只有**新建**条目（缺键）才叫「刚建立，就是现在」。
+- **回归**：`test/collision.test.mjs` ·「writeEntry · lastVerifiedAt 三态」。
+
+### Changed · `CONFIDENCE_RANK` 收敛到 `lib/model.js` 一份
+
+- 这个映射被三处需要，`lifecycle.bestOf` 和 `promote.js` 各抄了一份（值当时一样，
+  但没有任何东西保证以后一样）。现在只有 `lib/model.js` 一份。
+- 这是本仓库第二次为「一张表活着、没人往里写」付账（第一次是
+  `index-build.js` 的 `graphKindStrength` 死表）。
+
+### 试过、退回了 ·「R4/R5 只进指针层」
+
+- **想法**：把高后果记忆从正文层挪到指针层，改「进了什么」而不是「说了什么」，
+  让「记忆不是指令」从**文案层缓解**变成**结构层保证**。
+- **为什么退回**：它假设 `actionRisk` 描述的是**这条记忆是不是一条指令**，
+  而它描述的是**正文里出现了哪些词**（`lib/model.js` 的 `actionRiskOf`）。
+- **实测**：`staging 部署健康检查超时的排查顺序` → `R4`。一条纯排障记忆，只因为
+  正文有「部署」二字就被判不可逆。降级成指针等于**中文运维记忆全部不再注入正文** ——
+  而 `gate.js:370-372` 已经有先例：过宽的检查会永久屏蔽合法记忆，而屏蔽是静默的。
+- **记录在**：`lib/recall.js` 的渲染注释 + [docs/03](docs/03-审核协议.md) §8.1
+  「已知债务」。
+
+### 发现、未修 · `actionRiskOf` 的中英文不对称
+
+- `DESTRUCTIVE` / `EXTERNAL` / `SECURITY` 三个正则对英文用 `\b...\b`，
+  对中文用裸 alternation。于是 `deployment` / `deleted` / `published` **不命中**
+  （词尾被吞），而 `部署` / `删除` / `发布` **任意位置命中**。
+- **实测**：`staging deployment health check timeout` → `R1`；
+  `staging 部署健康检查超时的排查顺序` → `R4`。**同一个意思，中文记忆风险更高。**
+- **影响面**：`actionRisk` 进 `contentHash`（改它会让既有回执失效），且它决定
+  ⚠ 提示与推广包的 `actionRisk` 字段。修它需要一份中英对照语料，属于 P1，不在本版。
+
+---
+
 ## [0.3.0] - 2026-11-07
 
 > 这一版只做一件事：**把「机制写好了、就是没接上」这类缺口堵死**。

@@ -27,6 +27,8 @@ import {
   reviewHints,
   stripQuoted,
   suggestsDeprecation,
+  weakestConfidence,
+  worstActionRisk,
 } from '../lib/lifecycle.js'
 
 const NOW = Date.parse('2026-11-06T00:00:00Z')
@@ -245,6 +247,68 @@ describe('合并', () => {
       '旧实现把 symbol / commit 伪造成文件路径，合并产物一落盘就 quarantined',
     )
     assert.equal(merged.evidence.find((item) => item.kind === 'symbol').hash, 'h1')
+  })
+})
+
+/* ── 回归：合并不得放大权威 ───────────────────────────────────────── */
+
+/**
+ * 合并是**派生**：多条记忆压成一条。派生不能比来源更可信 ——
+ * 只要其中一条不成立，整段就不成立，所以产物的等级上限是**最弱那一环**。
+ *
+ * 上一版三处都取反了（`confidence: best`、`actionRisk: best`、
+ * `lastVerifiedAt: now`），三处叠加的效果是「这条记忆合并之后看起来更可信、
+ * 更安全、更新」—— 而原始条目已经 `deprecated`，**升级不可回退**。
+ */
+describe('合并 · 权威只能保持或降低', () => {
+  it('confidence 取最弱，不取最强', () => {
+    const merged = consolidate([
+      entry({ id: 'a', confidence: 'verified' }),
+      entry({ id: 'b', confidence: 'stale' }),
+    ])
+    assert.equal(merged.confidence, 'stale', 'verified + stale 必须得 stale —— 取最强就是权威洗白')
+  })
+
+  it('actionRisk 取最高，不取最低', () => {
+    const merged = consolidate([
+      entry({ id: 'a', actionRisk: 'R5' }),
+      entry({ id: 'b', actionRisk: 'R1' }),
+    ])
+    assert.equal(merged.actionRisk, 'R5', 'R5 + R1 必须保留 R5 —— 取最低会让「不可逆操作」的警告消失')
+  })
+
+  it('provenance 恒为最弱值（与 confidence 同一条纪律）', () => {
+    const merged = consolidate([
+      entry({ id: 'a', provenance: 'user-asserted' }),
+      entry({ id: 'b', provenance: 'measured' }),
+    ])
+    assert.equal(merged.provenance, 'self-concluded')
+  })
+
+  it('合并产物**从未被验证过** —— lastVerifiedAt 是 null，不是 now', () => {
+    const merged = consolidate([entry({ id: 'a' }), entry({ id: 'b' })])
+    assert.equal(merged.lastVerifiedAt, null, '一次合并给产物盖「刚刚验证过」，会把新鲜度、陈旧度、休眠三处一起放宽')
+  })
+
+  it('最弱 / 最高在三条以上时仍然成立（不是只比前两条）', () => {
+    const merged = consolidate([
+      entry({ id: 'a', confidence: 'verified', actionRisk: 'R1' }),
+      entry({ id: 'b', confidence: 'verified', actionRisk: 'R2' }),
+      entry({ id: 'c', confidence: 'deprecated', actionRisk: 'R4' }),
+    ])
+    assert.equal(merged.confidence, 'deprecated')
+    assert.equal(merged.actionRisk, 'R4')
+  })
+})
+
+describe('weakestConfidence / worstActionRisk 的兜底', () => {
+  it('缺标签按 inferred 算 —— 不让「没写」变成「最信」', () => {
+    assert.equal(weakestConfidence([{ confidence: undefined }, { confidence: 'verified' }]), 'inferred')
+  })
+
+  it('缺风险按 R1 算 —— 与 index-build / store 的兜底同口径', () => {
+    assert.equal(worstActionRisk([{ actionRisk: undefined }, { actionRisk: 'R3' }]), 'R3')
+    assert.equal(worstActionRisk([{ actionRisk: undefined }]), 'R1')
   })
 })
 

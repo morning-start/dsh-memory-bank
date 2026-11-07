@@ -101,3 +101,30 @@ describe('id 碰撞 · writeEntry 不许静默覆盖', () => {
     assert.equal(readAll(root).entries.length, 2)
   })
 })
+
+/**
+ * `lastVerifiedAt` 的三种输入必须区分开。
+ *
+ * 上一版是 `entry.lastVerifiedAt ?? now` —— `??` 把 `null` 当缺省，
+ * 于是「**从未验证过**」这个状态**不可表达**：任何写入都被自动盖上「刚刚验证过」。
+ * `lifecycle.consolidate` 的合并产物正是靠显式 `null` 表达这一点的
+ * （人批准的是「该合并」，不是「合并后这段话准确」）。
+ */
+describe('writeEntry · lastVerifiedAt 三态', () => {
+  it('缺键 → 就是现在（新条目刚建立）', () => {
+    const written = writeEntry(root, entry())
+    assert.ok(Number.isFinite(Date.parse(written.lastVerifiedAt)))
+  })
+
+  it('**显式 null → 原样保留**（从没验证过）', () => {
+    const written = writeEntry(root, entry({ lastVerifiedAt: null }))
+    assert.equal(written.lastVerifiedAt, null)
+    assert.equal(readAll(root).entries[0].lastVerifiedAt, null, '读回来也必须还是 null —— 否则只是内存里对')
+  })
+
+  it('显式时间戳 → 原样保留（重新验证一次不该被改掉）', () => {
+    const stamp = '2026-01-01T00:00:00.000Z'
+    const written = writeEntry(root, entry({ lastVerifiedAt: stamp }))
+    assert.equal(written.lastVerifiedAt, stamp)
+  })
+})
