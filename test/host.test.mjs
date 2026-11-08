@@ -889,6 +889,9 @@ describe('command · 薄壳之后行为不变', () => {
   })
 
   it('accept 不存在的提案回错误而不是抛', async () => {
+    // 0.5.0 起写子命令在未初始化时直接报「未初始化」—— 这一条测的是
+    // 「初始化之后，accept 一个不存在的 id 回错误而不是抛」。
+    ensureLayout(root)
     const command = createMemoryCommand({ resolveRoot: () => root, configSource, log: () => {}, mutations })
     const result = await command.handler({ rawInput: 'accept p_nope_0000', agent: null })
     assert.equal(result.kind, 'error')

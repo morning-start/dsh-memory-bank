@@ -20,7 +20,7 @@ import { extractionDrift } from '../lib/claims.js'
 import { fixedConfigSource } from '../lib/config/index.js'
 import { defaultConfig } from '../lib/config/defaults.js'
 import { serializeEntry } from '../lib/model.js'
-import { invalidateCorpus, readAll, writeProposal } from '../lib/store.js'
+import { ensureLayout, invalidateCorpus, readAll, writeProposal } from '../lib/store.js'
 import { createToolDefinitions } from '../lib/tools.js'
 
 const BODY = (extra = '') =>
@@ -88,6 +88,10 @@ beforeEach(() => {
   // 整组用例会变成「什么都没发生」的假绿。
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'acme' }), 'utf8')
   tools = createToolDefinitions({ resolveRoot: () => root, configSource: fixedConfigSource(defaultConfig()), log: () => {} })
+
+  // 0.5.0 起记忆库是 **opt-in** 的：`memory_remember` 在未初始化时直接报
+  // 「未初始化」。这组用例测的是 `syncClaims` 接线，所以先把骨架建起来。
+  ensureLayout(root)
 })
 
 afterEach(() => {

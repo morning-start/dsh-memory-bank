@@ -40,6 +40,13 @@ function fresh() {
   const cfg = resolveConfig({ autonomy: 'balanced' })
   const tools = createToolDefinitions({ resolveRoot: () => root, configSource: fixedConfigSource(cfg), log: () => {} })
   const tool = (name) => (args) => tools.find((item) => item.name === name).run(args, { agent: null })
+
+  // 0.5.0 起记忆库是 **opt-in** 的：`memory_init` 是唯一创建者，
+  // `memory_remember` 在未初始化时直接报「未初始化」。这份基准测的是
+  // 协议本身，所以每个「仓库」先初始化 —— 否则 7 条里有 5 条会变成
+  // 「门有没有生效」的重复断言。
+  tool('memory_init')({})
+
   return { root, cfg, tools, tool }
 }
 

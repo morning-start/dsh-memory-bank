@@ -83,7 +83,7 @@ Agent 调 `memory_remember`，十道门跑完：
 
 | 工具 | 作用 |
 |---|---|
-| `memory_init` | 初始化本仓库的记忆库（幂等，只建骨架，不写记忆） |
+| `memory_init` | 初始化本仓库的记忆库（幂等，只建骨架，不写记忆）**—— 唯一的创建者** |
 | `memory_remember` | 提议一条记忆（走完整协议） |
 | `memory_recall` | 主动召回（三级交付：content / pointers / abstain） |
 | `memory_pending` | 列待决提案 |
@@ -109,17 +109,18 @@ Agent 调 `memory_remember`，十道门跑完：
 
 ### 记忆库是 **opt-in** 的
 
-`.dsh-memory/` 不存在时，**自动行为一个字节都不写**：
+`.dsh-memory/` 不存在时，**一个字节都不写** —— `memory_init` 是**唯一**创建者：
 
 | 路径 | 未初始化时 |
 |---|---|
 | 自动捕获（`agent/turn-stopping`） | 直接 return，连配置都不读 |
 | 召回注入（`system-prompt.context`） | 不注入 |
 | 只读工具 / `/memory` 只读子命令 | 报「还没初始化记忆库」+ 初始化入口，**不建目录** |
-| 显式写（`memory_init` / `memory_remember` / `/memory init`） | 建骨架 |
+| 写工具 / 写子命令（`memory_remember` / `accept` / `reject` / `retire` / `reseed` / `promote --write`） | 同上，**也不写** |
+| `memory_init` / `/memory init` / 面板按钮 | **建骨架** |
 
-理由：`.dsh-memory/` 是**仓库制品**（正文与回执进 git），不是缓存。一个从没用过
-记忆的仓库，不该因为跑过几轮对话就多出这个目录 —— 那是用户没同意过的写入。
+理由：`.dsh-memory/` 是**仓库制品**（正文与回执进 git），不是缓存。创建它
+等于一次提交 —— 那必须是一个明确的动作，不能是副作用。
 
 没有初始化时，面板显示的是**一个初始化按钮**，不是「0 条记忆」——
 「没装过」和「装了但空」必须分得开。
@@ -157,15 +158,15 @@ Agent 调 `memory_remember`，十道门跑完：
 
 | | |
 |---|---|
-| 版本 | **0.4.4**（记忆库改成 opt-in：没初始化时自动捕获 / 召回注入一个字节都不写；新增 `memory_init`） |
-| 测试 | **594 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 15 条接线测试） |
+| 版本 | **0.5.0**（`memory_init` 是 `.dsh-memory/` 的唯一创建者：未初始化时自动捕获 / 召回注入 / **所有写入**一个字节都不写） |
+| 测试 | **599 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 15 条接线测试） |
 | 验收 | 设计文档 §14 的 7 条**全部通过**（`node bench/acceptance.mjs`） |
 | 基准 | G1 真阳性 **5/10** · 假阳性 **0/5** · 完整协议 **10/15** · 精度 **66.7%**；语义分离 **−0.139**（不可分离，见 `bench/embedding-experiment.mjs`） |
 | 规模 | **39** 个服务端模块 + 浏览器端 `client/` · 约 430 KB |
 | 依赖 | 仅 `@deepseek-ai/schemastery`（peer）；浏览器端零依赖（React 由平台种子表提供） |
 
 ```bash
-npm test                      # 594 条单测（需先链接 peer，见 docs/07 §5）
+npm test                      # 599 条单测（需先链接 peer，见 docs/07 §5）
 npm run doctor                # 自检：装好了吗（只读，退出码 0/1）
 node bench/acceptance.mjs     # 验收 7 条
 node bench/g1-eval.mjs        # G1 拿本仓库自己的文档实测

@@ -64,6 +64,11 @@ beforeEach(() => {
 
   cfg = resolveConfig({ autonomy: 'balanced' })
   tools = createToolDefinitions({ resolveRoot: () => root, configSource: fixedConfigSource(cfg), log: () => {} })
+
+  // 0.5.0 起记忆库是 **opt-in** 的：`memory_init` 是唯一创建者，
+  // `memory_remember` 在未初始化时直接报「未初始化」。这些用例测的是协议本身，
+  // 所以先把骨架建起来 —— 不建的话它们测的会变成「门有没有生效」。
+  store.ensureLayout(root)
 })
 
 afterEach(() => {

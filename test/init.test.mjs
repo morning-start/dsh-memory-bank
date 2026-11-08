@@ -24,7 +24,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
@@ -252,7 +252,59 @@ describe('自动捕获 · 未初始化时连配置都不读', () => {
   })
 })
 
-/* ── 4 · 只读工具不替用户 opt-in ─────────────────────────────────── */
+/* ── 4 · 显式写也要 opt-in（0.5.0 起更严格） ────────────────────── */
+
+describe('memory_remember · 显式写也要 opt-in', () => {
+  const CANDIDATE = {
+    title: '部署前要跑 lint',
+    kind: 'convention',
+    about: '提交前检查',
+    body: '# 功能名\n部署前跑 lint\n\n# 生效条件\n任何提交\n\n# 子功能\n无\n\n# 执行\n跑 npm run lint\n\n# 验证方式\nCI 通过\n\n# 不适用条件\n无',
+    evidence: [{ kind: 'file', ref: 'src/db/pool.ts' }],
+    scope: ['repo:acme/api'],
+  }
+
+  it('**未初始化时写记忆被拒，且不建目录**', async () => {
+    // 0.4.4 这里是「显式写会顺手建骨架」—— 那让 init 这道门只挡住了一半：
+    // 模型依然可以在任何仓库里写出一条记忆，顺手把目录建出来。而
+    // `.dsh-memory/` **会被提交进 git**，创建它等于一次提交。
+    const text = await tool('memory_remember').run(CANDIDATE, { agent: null })
+
+    assert.match(text, /还没初始化记忆库/, '未初始化时 memory_remember 应该报「未初始化」')
+    assert.equal(memoryDirExists(), false, 'memory_remember 在未初始化的仓库里建出了 .dsh-memory/')
+  })
+
+  it('初始化之后同一条路径能走完协议（不再报「未初始化」）', async () => {
+    // 造出证据锚点 —— 否则会先被 G4 拦下，测的就不是这道门了。
+    mkdirSync(join(root, 'src', 'db'), { recursive: true })
+    writeFileSync(join(root, 'src', 'db', 'pool.ts'), 'export const DB_POOL_MAX = 10\n', 'utf8')
+    ensureLayout(root)
+
+    // 走完十道门可能 ACCEPT / REJECT / DEFER —— 那都是协议在说话。
+    // 唯一不能出现的是「还没初始化记忆库」。
+    // `run()` 默认**同步返回 string**，只在语义通道开着时才返回 Promise ——
+    // 所以不能 `.then()`，用 try/await 两种都吃。
+    let outcome
+    try {
+      outcome = await tool('memory_remember').run(CANDIDATE, { agent: null })
+    } catch (error) {
+      outcome = `REJECT: ${error?.message ?? error}`
+    }
+    assert.equal(/还没初始化记忆库/.test(String(outcome)), false, `初始化之后仍然被门挡住：${outcome}`)
+  })
+
+  it('/memory 的写子命令也遵守同一道门', async () => {
+    const command = createMemoryCommand({ resolveRoot: () => root, configSource: configSourceFor(), log: () => {} })
+    for (const rawInput of ['accept p_1', 'reject p_1', 'retire m_1', 'reseed', 'promote --write']) {
+      const result = await command.handler({ rawInput, agent: null })
+      assert.equal(result.kind, 'error', `/memory ${rawInput} 未初始化时应该报错`)
+      assert.match(result.text, /还没初始化记忆库/, `/memory ${rawInput} 没报「未初始化」`)
+    }
+    assert.equal(memoryDirExists(), false, '写子命令在未初始化时建出了 .dsh-memory/')
+  })
+})
+
+/* ── 5 · 只读工具不替用户 opt-in ─────────────────────────────────── */
 
 describe('只读工具 · 报「未初始化」，且不建目录', () => {
   const cases = [
@@ -277,5 +329,13 @@ describe('只读工具 · 报「未初始化」，且不建目录', () => {
     ensureLayout(root)
     const text = await tool('memory_pending').run({}, { agent: null })
     assert.equal(text, '没有待决提案。')
+  })
+
+  it('提示里**不许**再出现「顺手建骨架」（0.4.x 的遗物）', async () => {
+    // 0.5.0 起 `memory_remember` 不再建骨架。提示里留着那句话，模型就会以为
+    // 有第二条路 —— **一句不再成立的提示比没有提示更糟**。
+    const text = await tool('memory_recall').run({ query: '任何东西' }, { agent: null })
+    assert.equal(/顺手建骨架/.test(text), false, '还在暗示 memory_remember 能自动建骨架')
+    assert.match(text, /所有写入在初始化之前都不会执行/, '提示没说清「写也不通」')
   })
 })
