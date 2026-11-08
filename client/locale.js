@@ -141,10 +141,15 @@ const en = {
   //
   // 「0 条」和「没装过」是两件不同的事：前者是结论，后者是**还没开始**。
   // 混在一起用户会以为记忆坏了。未初始化状态下这一栏只有一个动作。
-  uninitializedTitle: 'This repository has no memory bank yet.',
+  //
+  // **文案里不写反引号。** 这些是**纯文本**，反引号会照原样显示 ——
+  // 0.4.x 的界面上就真的显示成了「` .dsh-memory/ `」。要不要等宽由渲染端
+  // 决定，不靠 Markdown 语法。
+  uninitializedTitle: 'This repository has no memory bank yet',
   uninitializedDesc:
-    'Automatic capture and recall injection stay off until `.dsh-memory/` exists — nothing has been written behind your back.',
-  uninitializedWhat: 'Initializing creates `.dsh-memory/` (memories / trust / pending / inbox / index) plus an empty `config.json`, receipt store and `.gitignore`.',
+    'Automatic capture and recall injection stay off until .dsh-memory/ exists — nothing has been written behind your back.',
+  uninitializedCreates: 'Initializing creates',
+  uninitializedExtras: 'plus an empty config.json, a receipt store and .gitignore.',
   uninitializedIdempotent: 'Idempotent: existing files are never touched.',
   uninitializedAction: 'Initialize memory bank',
   uninitializedDone: 'Memory bank initialized. Automatic capture and recall are now on.',
@@ -350,11 +355,15 @@ const zh = {
   //
   // 「0 条」和「没装过」是两件不同的事：前者是结论，后者是**还没开始**。
   // 混在一起用户会以为记忆坏了。未初始化状态下这一栏只有一个动作。
-  uninitializedTitle: '这个仓库还没初始化记忆库。',
+  //
+  // **文案里不写反引号。** 这些是**纯文本**，反引号会照原样显示 ——
+  // 0.4.x 的界面上就真的显示成了「` .dsh-memory/ `」。要不要等宽由渲染端
+  // 决定，不靠 Markdown 语法。
+  uninitializedTitle: '这个仓库还没初始化记忆库',
   uninitializedDesc:
-    '自动捕获与召回注入在 `.dsh-memory/` 存在之前不会执行 —— 它没有在你背后写过任何东西。',
-  uninitializedWhat:
-    '初始化会建出 `.dsh-memory/`（memories / trust / pending / inbox / index 五个目录），以及空的 `config.json`、空回执表和 `.gitignore`。',
+    '自动捕获与召回注入在 .dsh-memory/ 存在之前不会执行 —— 它没有在你背后写过任何东西。',
+  uninitializedCreates: '初始化会建出',
+  uninitializedExtras: '以及空的 config.json、空回执表和 .gitignore。',
   uninitializedIdempotent: '幂等：已有文件一个字节都不动。',
   uninitializedAction: '初始化记忆库',
   uninitializedDone: '记忆库已初始化。自动捕获与召回注入从现在起生效。',

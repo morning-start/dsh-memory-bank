@@ -158,15 +158,15 @@ Agent 调 `memory_remember`，十道门跑完：
 
 | | |
 |---|---|
-| 版本 | **0.5.0**（`memory_init` 是 `.dsh-memory/` 的唯一创建者：未初始化时自动捕获 / 召回注入 / **所有写入**一个字节都不写） |
-| 测试 | **599 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 15 条接线测试） |
+| 版本 | **0.5.1**（`memory_init` 是 `.dsh-memory/` 的唯一创建者：未初始化时自动捕获 / 召回注入 / **所有写入**一个字节都不写；未初始化那一屏是引导卡片） |
+| 测试 | **600 条**，`node --test "test/*.test.mjs"`（链接 peer 依赖后；不链接则少 15 条接线测试） |
 | 验收 | 设计文档 §14 的 7 条**全部通过**（`node bench/acceptance.mjs`） |
 | 基准 | G1 真阳性 **5/10** · 假阳性 **0/5** · 完整协议 **10/15** · 精度 **66.7%**；语义分离 **−0.139**（不可分离，见 `bench/embedding-experiment.mjs`） |
 | 规模 | **39** 个服务端模块 + 浏览器端 `client/` · 约 430 KB |
 | 依赖 | 仅 `@deepseek-ai/schemastery`（peer）；浏览器端零依赖（React 由平台种子表提供） |
 
 ```bash
-npm test                      # 599 条单测（需先链接 peer，见 docs/07 §5）
+npm test                      # 600 条单测（需先链接 peer，见 docs/07 §5）
 npm run doctor                # 自检：装好了吗（只读，退出码 0/1）
 node bench/acceptance.mjs     # 验收 7 条
 node bench/g1-eval.mjs        # G1 拿本仓库自己的文档实测

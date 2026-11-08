@@ -151,10 +151,15 @@ const en = {
   //
   // 「0 条」和「没装过」是两件不同的事：前者是结论，后者是**还没开始**。
   // 混在一起用户会以为记忆坏了。未初始化状态下这一栏只有一个动作。
-  uninitializedTitle: 'This repository has no memory bank yet.',
+  //
+  // **文案里不写反引号。** 这些是**纯文本**，反引号会照原样显示 ——
+  // 0.4.x 的界面上就真的显示成了「` .dsh-memory/ `」。要不要等宽由渲染端
+  // 决定，不靠 Markdown 语法。
+  uninitializedTitle: 'This repository has no memory bank yet',
   uninitializedDesc:
-    'Automatic capture and recall injection stay off until `.dsh-memory/` exists — nothing has been written behind your back.',
-  uninitializedWhat: 'Initializing creates `.dsh-memory/` (memories / trust / pending / inbox / index) plus an empty `config.json`, receipt store and `.gitignore`.',
+    'Automatic capture and recall injection stay off until .dsh-memory/ exists — nothing has been written behind your back.',
+  uninitializedCreates: 'Initializing creates',
+  uninitializedExtras: 'plus an empty config.json, a receipt store and .gitignore.',
   uninitializedIdempotent: 'Idempotent: existing files are never touched.',
   uninitializedAction: 'Initialize memory bank',
   uninitializedDone: 'Memory bank initialized. Automatic capture and recall are now on.',
@@ -360,11 +365,15 @@ const zh = {
   //
   // 「0 条」和「没装过」是两件不同的事：前者是结论，后者是**还没开始**。
   // 混在一起用户会以为记忆坏了。未初始化状态下这一栏只有一个动作。
-  uninitializedTitle: '这个仓库还没初始化记忆库。',
+  //
+  // **文案里不写反引号。** 这些是**纯文本**，反引号会照原样显示 ——
+  // 0.4.x 的界面上就真的显示成了「` .dsh-memory/ `」。要不要等宽由渲染端
+  // 决定，不靠 Markdown 语法。
+  uninitializedTitle: '这个仓库还没初始化记忆库',
   uninitializedDesc:
-    '自动捕获与召回注入在 `.dsh-memory/` 存在之前不会执行 —— 它没有在你背后写过任何东西。',
-  uninitializedWhat:
-    '初始化会建出 `.dsh-memory/`（memories / trust / pending / inbox / index 五个目录），以及空的 `config.json`、空回执表和 `.gitignore`。',
+    '自动捕获与召回注入在 .dsh-memory/ 存在之前不会执行 —— 它没有在你背后写过任何东西。',
+  uninitializedCreates: '初始化会建出',
+  uninitializedExtras: '以及空的 config.json、空回执表和 .gitignore。',
   uninitializedIdempotent: '幂等：已有文件一个字节都不动。',
   uninitializedAction: '初始化记忆库',
   uninitializedDone: '记忆库已初始化。自动捕获与召回注入从现在起生效。',
@@ -1353,17 +1362,105 @@ const CSS = `
 }
 
 /*
- * 未初始化：这一栏只有一个动作，所以给它呼吸空间。
+ * 未初始化：一张引导卡片，不是一个空态。
  *
- * 不要把它做成「空列表 + 一块灰」—— 那是「没有数据」的形态，而这里是
- * **还没开始**。标题说清楚，动作只有一个，其余全是解释。
+ * 0.4 那版用的是 EmptyState（虚线框 + 居中一行小字）。那个形状是给「列表空
+ * 了」用的 —— 而这里是**还没开始**。虚线框在 2000px 宽的面板里更像一块没
+ * 加载完的占位，而且它的居中排版读起来像报错。
+ *
+ * 卡片自己限宽：面板可以很宽，但一行字超过约 70 字就开始丢行。
+ * 四个层次（标题 / 解释 / 建什么 / 动作）各自有字号与颜色，顺序就是读者的
+ * 问题顺序。
  */
 .mb-uninitialized {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 12px;
-  padding: 24px 0;
+  box-sizing: border-box;
+  max-width: 680px;
+  margin-top: 4px;
+  padding: 20px 22px 18px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.mb-uninitialized__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mb-uninitialized__icon {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.mb-uninitialized__title {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.mb-uninitialized__desc {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 19px;
+}
+
+/* 「初始化会建出」—— 一个小标签，不进正文句子。
+ *
+ * 用 tertiary 而不是 caption：caption 在 layer-2 上只有 3.04:1，低于 WCAG AA
+ * 的 4.5:1。这一行是**小字**，小字更吃对比度，不能靠「它只是标签」放过去。
+ */
+.mb-uninitialized__label {
+  margin: 2px 0 -4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.mb-uninitialized__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mb-uninitialized__chip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-secondary);
+  font-family: "SF Mono", "JetBrains Mono", "Fira Code", Consolas, Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/*
+ * 动作区竖排：按钮在上，「幂等」脚注在下。
+ *
+ * 横排时脚注被挤在按钮右边、和按钮底边对齐 —— 读起来像按钮的一部分，
+ * 而它是**对按钮后果的说明**，该在动作之后、单独一行。
+ */
+.mb-uninitialized__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* 脚注同样从小字出发 —— caption 在 layer-2 上只有 3.04:1。 */
+.mb-uninitialized__foot {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .mb-panel__head {
@@ -3391,6 +3488,18 @@ const TABS = Object.freeze([
 const DRIFT_BUCKETS = Object.freeze(['quarantined', 'advisory', 'unsafePath', 'notADefinition'])
 
 /**
+ * `ensureLayout` 会建出的五个目录 —— **未初始化卡片上那排 chip 的内容**。
+ *
+ * 逐个列出来是刻意的：文案里写「五个目录」用户不知道是哪五个，而这里每一个
+ * 都有名字。顺序与 `lib/store.js` 的 `ensureLayout` 一致。
+ *
+ * 不写成 `'memories / trust / …'` 一行字：那是**字面量斜杠**，读起来像路径
+ * 又不像，而且中文排版里斜杠两侧要不要空格没有定论。chip 把「这是一个目录名」
+ * 画出来，不需要解释。
+ */
+const MEMORY_SKELETON = Object.freeze(['memories/', 'trust/', 'pending/', 'inbox/', 'index/'])
+
+/**
  * 记忆面板的状态机。数据全部来自只读查询 + 写操作 RPC。
  *
  * @param {{ remote: { memoryBank: Record<string, Function> } }} ctx
@@ -3768,33 +3877,58 @@ function MemoryView(props) {
  * 混在一起用户会以为记忆坏了（0.3.7 修过「0 到底是没记忆还是读错了地方」，
  * 这是同一个坑的第二面）。
  *
- * ## 为什么这个按钮存在
+ * ## 为什么是一张卡片而不是一块空态
  *
- * 一个 GUI 不该只能告诉你「去终端跑 `/memory init`」。走
- * `memoryBank/init` → `lib/adjudicate.js` 的 `init`，和工具面 / 命令面
- * **同一个实现**（进同一个写锁）。
+ * 0.4.x 用的是 `EmptyState`（虚线框 + 居中一行小字）。那个形状是给「列表空
+ * 了」用的 —— 而这里是**还没开始**，需要的是「这东西是什么 / 会建出什么 /
+ * 点哪里」。虚线框在 2000px 宽的面板里更像一块没加载完的占位。
+ *
+ * 卡片的四个层次（标题 / 解释 / 建什么 / 动作）各自有字号与颜色，
+ * 顺序就是用户的问题顺序。
+ *
+ * ## 为什么目录名做成 chip 而不是写进行内句子
+ *
+ * 原来那句「（memories / trust / pending / inbox / index 五个目录）」是**字面量
+ * 斜杠**，而且反引号会照原样显示 —— 用户看到的是 `` `.dsh-memory/` ``。
+ * 拆成 chip 之后既可读又不用在文案里藏 Markdown。
  *
  * @param {{ t: Function, memory: any, state: any }} props
  */
 function UninitializedState({ t, memory, state }) {
   const busy = state.busy === 'init'
   return h(
-    'div',
-    { className: 'mb-uninitialized' },
-    h(EmptyState, { title: t('uninitializedTitle'), desc: t('uninitializedDesc') }),
-    h('p', { className: 'mb-caption' }, t('uninitializedWhat')),
-    h('p', { className: 'mb-caption' }, t('uninitializedIdempotent')),
+    'section',
+    { className: 'mb-uninitialized', 'aria-labelledby': 'mb-uninitialized-title' },
     h(
-      'button',
-      {
-        type: 'button',
-        className: 'mb-btn mb-btn--primary',
-        disabled: busy,
-        onClick: () => {
-          void memory.init()
+      'div',
+      { className: 'mb-uninitialized__head' },
+      h(Icon, { name: 'memory', size: 16, className: 'mb-uninitialized__icon' }),
+      h('h3', { id: 'mb-uninitialized-title', className: 'mb-uninitialized__title' }, t('uninitializedTitle')),
+    ),
+    h('p', { className: 'mb-uninitialized__desc' }, t('uninitializedDesc')),
+    h('p', { className: 'mb-uninitialized__label' }, t('uninitializedCreates')),
+    h(
+      'ul',
+      { className: 'mb-uninitialized__chips', 'aria-label': t('uninitializedCreates') },
+      MEMORY_SKELETON.map((name) => h('li', { key: name, className: 'mb-uninitialized__chip' }, name)),
+    ),
+    h('p', { className: 'mb-uninitialized__desc' }, t('uninitializedExtras')),
+    h(
+      'div',
+      { className: 'mb-uninitialized__actions' },
+      h(
+        'button',
+        {
+          type: 'button',
+          className: 'mb-btn mb-btn--primary',
+          disabled: busy,
+          onClick: () => {
+            void memory.init()
+          },
         },
-      },
-      busy ? t('loading') : t('uninitializedAction'),
+        busy ? t('loading') : t('uninitializedAction'),
+      ),
+      h('span', { className: 'mb-uninitialized__foot' }, t('uninitializedIdempotent')),
     ),
   )
 }

@@ -891,17 +891,105 @@ const CSS = `
 }
 
 /*
- * 未初始化：这一栏只有一个动作，所以给它呼吸空间。
+ * 未初始化：一张引导卡片，不是一个空态。
  *
- * 不要把它做成「空列表 + 一块灰」—— 那是「没有数据」的形态，而这里是
- * **还没开始**。标题说清楚，动作只有一个，其余全是解释。
+ * 0.4 那版用的是 EmptyState（虚线框 + 居中一行小字）。那个形状是给「列表空
+ * 了」用的 —— 而这里是**还没开始**。虚线框在 2000px 宽的面板里更像一块没
+ * 加载完的占位，而且它的居中排版读起来像报错。
+ *
+ * 卡片自己限宽：面板可以很宽，但一行字超过约 70 字就开始丢行。
+ * 四个层次（标题 / 解释 / 建什么 / 动作）各自有字号与颜色，顺序就是读者的
+ * 问题顺序。
  */
 .mb-uninitialized {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 12px;
-  padding: 24px 0;
+  box-sizing: border-box;
+  max-width: 680px;
+  margin-top: 4px;
+  padding: 20px 22px 18px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.mb-uninitialized__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mb-uninitialized__icon {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.mb-uninitialized__title {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.mb-uninitialized__desc {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 19px;
+}
+
+/* 「初始化会建出」—— 一个小标签，不进正文句子。
+ *
+ * 用 tertiary 而不是 caption：caption 在 layer-2 上只有 3.04:1，低于 WCAG AA
+ * 的 4.5:1。这一行是**小字**，小字更吃对比度，不能靠「它只是标签」放过去。
+ */
+.mb-uninitialized__label {
+  margin: 2px 0 -4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.mb-uninitialized__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mb-uninitialized__chip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-secondary);
+  font-family: "SF Mono", "JetBrains Mono", "Fira Code", Consolas, Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/*
+ * 动作区竖排：按钮在上，「幂等」脚注在下。
+ *
+ * 横排时脚注被挤在按钮右边、和按钮底边对齐 —— 读起来像按钮的一部分，
+ * 而它是**对按钮后果的说明**，该在动作之后、单独一行。
+ */
+.mb-uninitialized__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* 脚注同样从小字出发 —— caption 在 layer-2 上只有 3.04:1。 */
+.mb-uninitialized__foot {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .mb-panel__head {

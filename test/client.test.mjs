@@ -258,6 +258,13 @@ const CONFIG_SNAPSHOT = {
 
 const OVERVIEW = {
   root: 'E:\\repo\\.dsh-memory',
+  /**
+   * 这个仓库**装过**记忆库吗。
+   *
+   * 默认 `true`（其余用例测的是「有数据」的样子）。「未初始化」那一组用
+   * `mount({ overview: { initialized: false } })` 覆盖。
+   */
+  initialized: true,
   active: 42,
   pending: 3,
   inbox: 0,
@@ -322,7 +329,11 @@ const LEDGER = [
  * RPC 信封 —— 和真实线上一致。
  * @returns {{ calls: Array<{ channel: string, method: string, args: unknown[], named: object }>, rpc: object }}
  */
-function createFakeRemote() {
+/**
+ * 假 RPC。`overrides` 按方法名覆盖**返回体**（目前只有 `overview` 用得着，
+ * 用来测「未初始化」那一屏）。
+ */
+function createFakeRemote(overrides = {}) {
   const calls = []
   const mutations = new Set(Object.values(MUTATIONS).map((entry) => entry.method))
   const argNames = Object.fromEntries(
@@ -330,7 +341,7 @@ function createFakeRemote() {
   )
 
   const responders = {
-    overview: OVERVIEW,
+    overview: { ...OVERVIEW, ...overrides.overview },
     pending: { total: PENDING.length, items: PENDING },
     memories: [
       {
@@ -392,12 +403,12 @@ function createFakeRemote() {
  * 假 `ctx`。`effect` 立即执行回调（cordis 语义），`slots.inject` 记下回调
  * 等测试自己去调（真实语义是「槽声明时同步跑」）。
  */
-function createFakeCtx() {
+function createFakeCtx(options = {}) {
   const registrations = []
   const injections = []
   const disposers = []
   const dictionaries = []
-  const remote = createFakeRemote()
+  const remote = createFakeRemote(options)
 
   const locale = {
     register(ns, dicts) {
@@ -448,7 +459,7 @@ function createFakeCtx() {
  * 加载产物，跑 `apply`，把三个槽的注册体都装出来。
  * @returns {Promise<{ module: any, registrations: any[], injections: any[], styles: any[], t: Function, calls: any[], disposers: any[] }>}
  */
-async function mount() {
+async function mount(options = {}) {
   let captured
   const document = createFakeDocument()
   const sandbox = {
@@ -478,7 +489,7 @@ async function mount() {
   })
   assert.deepEqual(required, ['react'])
 
-  const fake = createFakeCtx()
+  const fake = createFakeCtx(options)
   module_.apply(fake.ctx)
 
   // 槽声明时回调同步跑 —— 这里手动模拟一次。
@@ -1068,6 +1079,48 @@ test('渲染：记忆面板健康概览 + 待决 + 四道门的解释', async ()
   // 四道门 → 四个 tab
   const tabs = findAll(tree, (node) => node.props.role === 'tab')
   assert.equal(tabs.length, 4, `应该有四个 tab，实际 ${tabs.length}`)
+})
+
+test('渲染：未初始化时只有一张引导卡片，没有健康概览和 tab', async () => {
+  const { registrations, t, calls } = await mount({ overview: { initialized: false } })
+  const { tree } = await mountView(registrations, t)
+  const text = textOfTree(tree)
+
+  // 「没装过」和「装了但空」必须分得开 —— 这一屏的唯一动作是初始化。
+  assert.ok(text.includes('这个仓库还没初始化记忆库'), '没有未初始化标题')
+  assert.ok(text.includes('初始化记忆库'), '没有初始化按钮')
+
+  // 「建什么」要逐个点名，不能只说「五个目录」。
+  for (const name of ['memories/', 'trust/', 'pending/', 'inbox/', 'index/']) {
+    assert.ok(text.includes(name), `卡片上没列出 ${name}`)
+  }
+
+  // 0.4 那句「或者直接 memory_remember —— 显式写会顺手建骨架」已经不成立，
+  // 留在这里会让模型以为有第二条路。
+  assert.equal(text.includes('顺手建骨架'), false, '过期文案又回来了')
+
+  // 反面：健康概览与 tab 都属于「有数据」的形态，未初始化时一个都不该有。
+  assert.equal(
+    findAll(tree, (node) => node.props.role === 'tab').length,
+    0,
+    '未初始化时不该有 tab',
+  )
+
+  // 按钮必须真的打到 `memoryBank/init`（而不是只画了一个不会动的壳）。
+  // 按 className 找而不是按文字找：`flatten` 出来的宿主元素只有 `type` /
+  // `props`，文字是**另一个**节点 —— 对元素再调 `textOfTree` 会炸。
+  const [button] = findAll(
+    tree,
+    (node) => node.type === 'button' && String(node.props?.className ?? '').includes('mb-btn--primary'),
+  )
+  assert.ok(button, '找不到初始化按钮')
+  assert.equal(typeof button.props.onClick, 'function', '初始化按钮没有 onClick')
+  await button.props.onClick()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.ok(
+    calls.some((call) => call.method === 'init'),
+    `按钮没有调 memoryBank/init（实际调用：${calls.map((call) => call.method).join(', ')}）`,
+  )
 })
 
 test('渲染：切 tab 能出记忆 / 漂移 / 审计', async () => {

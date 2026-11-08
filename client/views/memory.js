@@ -48,6 +48,18 @@ const TABS = Object.freeze([
 const DRIFT_BUCKETS = Object.freeze(['quarantined', 'advisory', 'unsafePath', 'notADefinition'])
 
 /**
+ * `ensureLayout` 会建出的五个目录 —— **未初始化卡片上那排 chip 的内容**。
+ *
+ * 逐个列出来是刻意的：文案里写「五个目录」用户不知道是哪五个，而这里每一个
+ * 都有名字。顺序与 `lib/store.js` 的 `ensureLayout` 一致。
+ *
+ * 不写成 `'memories / trust / …'` 一行字：那是**字面量斜杠**，读起来像路径
+ * 又不像，而且中文排版里斜杠两侧要不要空格没有定论。chip 把「这是一个目录名」
+ * 画出来，不需要解释。
+ */
+const MEMORY_SKELETON = Object.freeze(['memories/', 'trust/', 'pending/', 'inbox/', 'index/'])
+
+/**
  * 记忆面板的状态机。数据全部来自只读查询 + 写操作 RPC。
  *
  * @param {{ remote: { memoryBank: Record<string, Function> } }} ctx
@@ -425,33 +437,58 @@ function MemoryView(props) {
  * 混在一起用户会以为记忆坏了（0.3.7 修过「0 到底是没记忆还是读错了地方」，
  * 这是同一个坑的第二面）。
  *
- * ## 为什么这个按钮存在
+ * ## 为什么是一张卡片而不是一块空态
  *
- * 一个 GUI 不该只能告诉你「去终端跑 `/memory init`」。走
- * `memoryBank/init` → `lib/adjudicate.js` 的 `init`，和工具面 / 命令面
- * **同一个实现**（进同一个写锁）。
+ * 0.4.x 用的是 `EmptyState`（虚线框 + 居中一行小字）。那个形状是给「列表空
+ * 了」用的 —— 而这里是**还没开始**，需要的是「这东西是什么 / 会建出什么 /
+ * 点哪里」。虚线框在 2000px 宽的面板里更像一块没加载完的占位。
+ *
+ * 卡片的四个层次（标题 / 解释 / 建什么 / 动作）各自有字号与颜色，
+ * 顺序就是用户的问题顺序。
+ *
+ * ## 为什么目录名做成 chip 而不是写进行内句子
+ *
+ * 原来那句「（memories / trust / pending / inbox / index 五个目录）」是**字面量
+ * 斜杠**，而且反引号会照原样显示 —— 用户看到的是 `` `.dsh-memory/` ``。
+ * 拆成 chip 之后既可读又不用在文案里藏 Markdown。
  *
  * @param {{ t: Function, memory: any, state: any }} props
  */
 function UninitializedState({ t, memory, state }) {
   const busy = state.busy === 'init'
   return h(
-    'div',
-    { className: 'mb-uninitialized' },
-    h(EmptyState, { title: t('uninitializedTitle'), desc: t('uninitializedDesc') }),
-    h('p', { className: 'mb-caption' }, t('uninitializedWhat')),
-    h('p', { className: 'mb-caption' }, t('uninitializedIdempotent')),
+    'section',
+    { className: 'mb-uninitialized', 'aria-labelledby': 'mb-uninitialized-title' },
     h(
-      'button',
-      {
-        type: 'button',
-        className: 'mb-btn mb-btn--primary',
-        disabled: busy,
-        onClick: () => {
-          void memory.init()
+      'div',
+      { className: 'mb-uninitialized__head' },
+      h(Icon, { name: 'memory', size: 16, className: 'mb-uninitialized__icon' }),
+      h('h3', { id: 'mb-uninitialized-title', className: 'mb-uninitialized__title' }, t('uninitializedTitle')),
+    ),
+    h('p', { className: 'mb-uninitialized__desc' }, t('uninitializedDesc')),
+    h('p', { className: 'mb-uninitialized__label' }, t('uninitializedCreates')),
+    h(
+      'ul',
+      { className: 'mb-uninitialized__chips', 'aria-label': t('uninitializedCreates') },
+      MEMORY_SKELETON.map((name) => h('li', { key: name, className: 'mb-uninitialized__chip' }, name)),
+    ),
+    h('p', { className: 'mb-uninitialized__desc' }, t('uninitializedExtras')),
+    h(
+      'div',
+      { className: 'mb-uninitialized__actions' },
+      h(
+        'button',
+        {
+          type: 'button',
+          className: 'mb-btn mb-btn--primary',
+          disabled: busy,
+          onClick: () => {
+            void memory.init()
+          },
         },
-      },
-      busy ? t('loading') : t('uninitializedAction'),
+        busy ? t('loading') : t('uninitializedAction'),
+      ),
+      h('span', { className: 'mb-uninitialized__foot' }, t('uninitializedIdempotent')),
     ),
   )
 }
