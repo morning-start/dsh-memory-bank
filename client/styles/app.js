@@ -871,14 +871,30 @@ const CSS = `
  * 就是 flex:1 / min-height:0 的列 flex 容器，跟着它的语言写才不会在
  * 某次布局改动后失配。
  *
- * 左右 28px 对齐 viewArea 同级的头部内边距，让标题和标签落在同一条竖线上。
+ * ## 居中阅读列
+ *
+ * 面板挂在 conversation 的 view 槽上 —— 它和对话消息**在同一个区域**，而消息
+ * 本来就是一条居中的窄列。满宽排版在 2000px 的窗口里一行 200 多个字，
+ * 眼睛回行会丢。
+ *
+ * 用 padding-inline + max() 而不是 max-width + margin-inline:auto：
+ *
+ *   - 后者让**滚动条**跑到视口最右边，而内容缩在中间 —— 滚动条和内容分开，
+ *     滚轮还落在内容外面。
+ *   - 前者滚动条仍贴着面板边（和对话区一致），内容落在中间那 720px 里。
+ *
+ * 720px 是对话区消息列的宽度。28px 是窄屏时的下限 —— 再小就贴边了。
+ *
+ * **这个文件是模板字符串体**（const CSS = 反引号 ... 反引号），注释里不能写
+ * 反引号，否则字符串提前终止、整个 client.js 语法错。要引号用「」。
  */
 .mb-panel--view {
   box-sizing: border-box;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px 28px 40px;
+  padding-block: 20px 40px;
+  padding-inline: max(28px, calc((100% - 720px) / 2));
 }
 
 /*
@@ -897,7 +913,9 @@ const CSS = `
  * 了」用的 —— 而这里是**还没开始**。虚线框在 2000px 宽的面板里更像一块没
  * 加载完的占位，而且它的居中排版读起来像报错。
  *
- * 卡片自己限宽：面板可以很宽，但一行字超过约 70 字就开始丢行。
+ * 卡片**撑满阅读列**（宽度由 .mb-panel--view 的居中 padding 决定）——
+ * 自己再限一道宽会右边缘缩进来，和上面的标题对不齐。
+ *
  * 四个层次（标题 / 解释 / 建什么 / 动作）各自有字号与颜色，顺序就是读者的
  * 问题顺序。
  */
@@ -906,7 +924,6 @@ const CSS = `
   flex-direction: column;
   gap: 12px;
   box-sizing: border-box;
-  max-width: 680px;
   margin-top: 4px;
   padding: 20px 22px 18px;
   border: 0.5px solid var(--dsw-alias-border-l3);

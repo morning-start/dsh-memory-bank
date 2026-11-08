@@ -722,11 +722,23 @@ test('样式：只用 --dsw-alias-* / --mb-* token，没有裸色值', async () 
   const { styles } = await mount()
   const css = styles[0].textContent
 
+  /**
+   * **先剥注释再扫。**
+   *
+   * 这两条断言的正则都是「扫字面量」。注释是给人看的散文 —— 里面写一句
+   * 「面板挂在 conversation 的 view 槽上」或者 `foo.bar`，正则就会当成一个
+   * 叫 `view` / `bar` 的类名，报一条谁也看不懂的错。
+   *
+   * 这类假阳性比漏报更糟：它逼着人把注释写成不自然的形状，或者干脆删掉
+   * 解释。剥掉注释之后，剩下的每一条都是真的选择器 / 真的声明。
+   */
+  const rules = css.replace(/\/\*[\s\S]*?\*\//g, '')
+
   const rawColor = /(#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\()/
-  const bad = css.match(rawColor)
+  const bad = rules.match(rawColor)
   assert.equal(bad, null, `CSS 里出现裸色值：${bad?.[0]}`)
 
-  const tokens = new Set([...css.matchAll(/var\(\s*(--[A-Za-z0-9-]+)/g)].map((match) => match[1]))
+  const tokens = new Set([...rules.matchAll(/var\(\s*(--[A-Za-z0-9-]+)/g)].map((match) => match[1]))
   assert.ok(tokens.size > 10, '一个 token 都没用，说明没走宿主主题')
   for (const token of tokens) {
     assert.ok(
@@ -736,7 +748,7 @@ test('样式：只用 --dsw-alias-* / --mb-* token，没有裸色值', async () 
   }
 
   // 类名必须带 mb- 前缀，否则会和宿主撞名。
-  const classes = new Set([...css.matchAll(/\.([A-Za-z][A-Za-z0-9_-]*)/g)].map((match) => match[1]))
+  const classes = new Set([...rules.matchAll(/\.([A-Za-z][A-Za-z0-9_-]*)/g)].map((match) => match[1]))
   for (const name of classes) {
     assert.ok(name.startsWith('mb-'), `类名 ${name} 没有 mb- 前缀（practices.md:35）`)
   }

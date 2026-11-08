@@ -6,6 +6,70 @@
 
 ---
 
+## [0.5.2] - 2026-11-08
+
+> 面板改成**居中阅读列**，和对话消息对齐。
+
+### Changed · 满宽 → 居中 720px 列
+
+面板挂在 `conversation.view` 上 —— 它和对话消息**在同一个区域**，而消息
+本来就是一条居中的窄列。0.5.1 之前它是满宽排版：在 2000px 的窗口里一行
+200 多个字，眼睛回行会丢；卡片贴在左边，右边空一片。
+
+```css
+/* 之前 */
+padding: 20px 28px 40px;
+
+/* 现在 */
+padding-block: 20px 40px;
+padding-inline: max(28px, calc((100% - 720px) / 2));
+```
+
+**为什么不用 `max-width + margin-inline: auto`**：那会让**滚动条**跑到视口
+最右边、内容缩在中间 —— 滚动条和内容分开，滚轮还落在内容外面。用
+`padding-inline + max()` 滚动条仍贴着面板边（和对话区一致），内容落在中间
+那 720px 里。窄屏时 `max(28px, …)` 退化成 28px，不会贴边。
+
+720px 是对话区消息列的宽度。
+
+卡片同时去掉自己的 `max-width: 680px` —— 阅读列已经限宽了，再加一道会让
+右边缘缩进来、和上面的标题对不齐。
+
+### Fixed · 测试正则把注释当类名
+
+`test/client.test.mjs` 的类名断言扫的是整个 CSS 字面量，于是注释里写一句
+「面板挂在 conversation 的 view 槽上」就会报「类名 `view` 没有 mb- 前缀」；
+写 `0.4.x` 会报「类名 `x`」。
+
+**假阳性比漏报更糟**：它逼着人把注释写成不自然的形状，或者干脆删掉解释。
+改成**先剥注释再扫**（`css.replace(/\/\*[\s\S]*?\*\//g, '')`）—— 剩下的每
+一条都是真的选择器 / 真的声明。
+
+### 踩坑记录 · CSS 是模板字符串体
+
+`client/styles/app.js` 是 `const CSS = \`…\``，**模板体里不能出现反引号**，
+否则字符串提前终止，整个 `client/client.js` 语法错（`Unexpected identifier`）。
+
+`scripts/check.mjs` 会抓到（`node --check` 那一段，79 文件里含 client.js），
+已验证：故意写坏 → `✗ client/client.js`。
+
+### 实测
+
+```
+npm test                    600 条 · 0 fail · 0 skip
+scripts/check.mjs           79 文件语法 / 2 目录路由 / 死导出 0 / 跨模块重名 0
+bench/acceptance.mjs        7/7 · 38 个模块零网络
+scripts/doctor.mjs          自检通过
+build-client --check        127679 字节一致
+check_design               1600×700 / 1250×560 / 900×600 三尺寸全过
+```
+
+### 迁移
+
+不需要。要**刷新页面**才看得到（`client/client.js` 是签入产物）。
+
+---
+
 ## [0.5.1] - 2026-11-08
 
 > 未初始化那一屏重做。原来的形状是**给「列表空了」用的**，而这里是「还没开始」。
