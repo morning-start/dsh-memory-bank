@@ -160,6 +160,14 @@ describe('command · /memory init', () => {
     const result = await command.handler({ rawInput: 'nope', agent: null })
     assert.match(result.text, /\/memory init/)
   })
+
+  it('**斜杠命令面板的 hint 里 init 在最前面**', () => {
+    // hint 是命令面板**唯一**看得见的那一行。少了 init，用户在没初始化过的
+    // 仓库里敲 `/memory` 只会看到「0 条记忆」，不知道有一个动作能把记忆库
+    // 建起来 —— 命令存在但不被发现，等于不存在。
+    const command = createMemoryCommand({ resolveRoot: () => root, configSource: configSourceFor(), log: () => {} })
+    assert.match(command.input.hint, /^init /, `hint 必须以 init 开头，实际是「${command.input.hint}」`)
+  })
 })
 
 /* ── 3 · 自动捕获：未初始化时一个字节都不写 ───────────────────────── */
