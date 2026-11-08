@@ -6,6 +6,102 @@
 
 ---
 
+## [0.4.4] - 2026-11-08
+
+> 这一版给记忆库装一个**开关**：没初始化过 `.dsh-memory/` 的仓库，自动行为一个字节都不写。
+
+### 问题 · 插件在你没同意的仓库里写东西
+
+`.dsh-memory/` 由**五条代码路径**惰性创建：
+
+| 路径 | 位置 | 自动？ |
+|---|---|---|
+| `memory_remember` | `lib/tools.js` 的 `submit()` | 显式 |
+| `memory_promote {write:true}` | `lib/tools.js` | 显式 |
+| `/memory recall` | `lib/command.js` | 显式（但**只读**却建目录） |
+| 后台捕获 drain | `lib/hooks.js` 的 `processItem()` | **自动** |
+| `reseed` | `lib/adjudicate.js` | 显式 |
+
+其中两条是**自动**的：`system-prompt.context` 的召回注入（早已用
+`hasCorpus` 挡住）和 `agent/turn-stopping` 的自动捕获（**没有挡**）。
+
+后果：在一个从没用过记忆的仓库里跑几轮对话，就会多出一个 `.dsh-memory/`
+—— 用户没同意过。而这个目录**会被提交进 git**（它是仓库制品，不是缓存）。
+
+### 修法 · `isInitialized(root)` 成为唯一的 opt-in 判据
+
+新增 `lib/store.js` 的 `isInitialized(root)`（判据是 `.dsh-memory/` 目录在不在）。
+四类路径各按自己的语义接上：
+
+| 路径 | 未初始化时 | 为什么 |
+|---|---|---|
+| 自动捕获（`agent/turn-stopping`） | **直接 return**，连配置都不读 | 自动行为必须 opt-in |
+| 召回注入（`system-prompt.context`） | 不注入（原本如此，改用一个判据） | prompt 装配零副作用 |
+| 只读工具 / 只读子命令 | 报「还没初始化记忆库」+ 初始化入口，**不建目录** | 看一眼状态不该写盘 |
+| 显式写（`memory_remember` / `promote --write` / drain） | 建骨架 | 明确的意图 |
+
+**`processItem` 也加了门**：队列项只在初始化过的仓库里有意义，走到那里说明
+`.dsh-memory/` 在那之后被删了。`ensureLayout` 会把它**恢复**回来 —— 那等于
+无视用户的删除。所以丢弃队列项，不重建。
+
+### 新增 · `memory_init` / `/memory init` / 面板按钮
+
+三个入口，**同一个实现**（`lib/adjudicate.js` 的 `init`，进同一个写锁）：
+
+| 入口 | 用法 |
+|---|---|
+| 工具 | `memory_init { dry_run?: boolean }` |
+| 命令 | `/memory init [--dry-run]` |
+| 面板 | 「未初始化」状态下那一个按钮（走 `memoryBank/init`） |
+
+**幂等**：`ensureLayout` 只补缺失项，已有文件一个字节都不动。`dry_run` 只报告
+会创建什么。
+
+### 新增 · 面板区分「没装过」和「装了但空」
+
+`overview()` 多一个 `initialized` 字段。`false` 时面板显示**一个初始化按钮**
+加一段解释，而不是「0 活跃 / 0 待决 / 0 漂移」。
+
+这是 0.3.7 那条「0 到底是没记忆还是读错了地方」的**第二面**：那一次分的是
+「读对了没」，这一次分的是「开始了没」。
+
+### 回归
+
+新增 `test/init.test.mjs` **17 条**。每一条都**同时**断言「没有创建
+`.dsh-memory/`」—— 只断言返回值的话，一个「先建目录再返回提示」的实现也能全绿。
+
+| 组 | 锁住什么 |
+|---|---|
+| 判据 | 新仓库 false / `ensureLayout` 后 true / 删掉后退回 false / 非法 root 不抛 |
+| `memory_init` | 建出 8 项且逐项报出、幂等、`dry_run` 不落盘、**输出里没有绝对路径** |
+| `/memory init` | 同上 + 用法里列了 `init` |
+| **自动捕获** | 未初始化时 `configSource.get` **一次都没调**（门在更前面）+ 没建目录；初始化之后同一条路径**会**继续 |
+| 只读工具 | `memory_recall` / `memory_pending` / `memory_audit` / `memory_promote` 各报「未初始化」且不落盘；初始化之后恢复正常 |
+
+**变异测试**：拆掉 `onTurnStopping` 里那道 `if (!isInitialized(root)) return`
+→ 16 过 / **1 挂**。
+
+### 实测
+
+```
+npm test                    594 条（+19）· 0 fail · 0 skip
+scripts/check.mjs           79 文件语法 / 2 目录路由 / 死导出 0 / 跨模块重名 0
+bench/acceptance.mjs        7/7 · 38 个模块零网络
+scripts/doctor.mjs          自检通过
+build-client --check        123847 字节一致
+```
+
+### 迁移
+
+**不需要。** 已经初始化过的仓库行为完全不变（`isInitialized` 为 `true`）。
+
+新仓库第一次要写记忆：显式调 `memory_remember` 会**顺手建骨架**（和以前一样），
+或者先 `memory_init` 把骨架建好再写。
+
+要刷新页面才能看到面板的「未初始化」状态（`client/client.js` 是签入产物）。
+
+---
+
 ## [0.4.3] - 2026-11-08
 
 > 这一版让面板**真正按会话读仓库**，而不是靠「最近一次不知道哪个会话解析出来的目录」。

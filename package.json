@@ -1,6 +1,6 @@
 {
   "name": "dsh-memory-bank",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "type": "module",
   "description": "DSH 的项目级记忆插件：Agent 自主判断该不该记，十道门自审，判不了才交人裁决",

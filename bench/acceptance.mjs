@@ -64,13 +64,13 @@ const SIX = (name) =>
     '生产环境（连接池按实例数缩放）。',
   ].join('\n')
 
-/* ── 1 · 7 个工具 + 1 个 prompt context ─────────────────────────── */
+/* ── 1 · 8 个工具 + 1 个 prompt context ─────────────────────────── */
 
 check('1', '装进 profile 后能看到工具与 prompt context', () => {
   const { tools } = fresh()
   const names = tools.map((item) => item.name)
-  assert(names.length === 7, `工具数 ${names.length} ≠ 7：${names.join(', ')}`)
-  for (const expected of ['memory_remember', 'memory_recall', 'memory_pending', 'memory_resolve', 'memory_audit', 'memory_promote', 'memory_forget']) {
+  assert(names.length === 8, `工具数 ${names.length} ≠ 8：${names.join(', ')}`)
+  for (const expected of ['memory_init', 'memory_remember', 'memory_recall', 'memory_pending', 'memory_resolve', 'memory_audit', 'memory_promote', 'memory_forget']) {
     assert(names.includes(expected), `缺 ${expected}`)
   }
 
@@ -84,7 +84,7 @@ check('1', '装进 profile 后能看到工具与 prompt context', () => {
   hooks.install()
   assert(captured, '没有注册 systemPrompt.context')
   assert(captured.order === 130, `order=${captured.order}`)
-  return `7 工具 · context order=${captured.order} name=${captured.name}`
+  return `8 工具 · context order=${captured.order} name=${captured.name}`
 })
 
 /* ── 2 · 「记住：X」→ 落盘 → 召回 tier=content ──────────────────── */

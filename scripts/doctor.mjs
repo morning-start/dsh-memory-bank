@@ -130,7 +130,9 @@ async function checkModules(root) {
 function checkLayout(root, layout) {
   const label = '.dsh-memory/ 布局'
   if (!existsSync(layout.base)) {
-    return skip('layout', label, '这个仓库还没初始化记忆库（第一次 `memory_remember` 会建）')
+    // 0.4.4 起记忆库是 **opt-in**：没初始化时自动捕获 / 召回注入一个字节都不写。
+    // 所以这条不是「等它自己建」，而是「想用就建」—— 说清楚入口。
+    return skip('layout', label, '这个仓库还没初始化记忆库（`/memory init` 或 `memory_init` 建；之前自动行为不会写盘）')
   }
   const missing = REQUIRED_LAYOUT.filter((name) => !existsSync(join(layout.base, name)))
   if (missing.length === 0) return ok('layout', label, REQUIRED_LAYOUT.join(' · '))

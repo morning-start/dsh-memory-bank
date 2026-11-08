@@ -137,6 +137,18 @@ const en = {
   rootFallbackHint:
     'The panel has no session working directory, so it reads the process cwd — that is not your repository and will always be empty. Run one tool call in the session, or set DSH_MEMORY_ROOT.',
 
+  // ---- 未初始化 ----
+  //
+  // 「0 条」和「没装过」是两件不同的事：前者是结论，后者是**还没开始**。
+  // 混在一起用户会以为记忆坏了。未初始化状态下这一栏只有一个动作。
+  uninitializedTitle: 'This repository has no memory bank yet.',
+  uninitializedDesc:
+    'Automatic capture and recall injection stay off until `.dsh-memory/` exists — nothing has been written behind your back.',
+  uninitializedWhat: 'Initializing creates `.dsh-memory/` (memories / trust / pending / inbox / index) plus an empty `config.json`, receipt store and `.gitignore`.',
+  uninitializedIdempotent: 'Idempotent: existing files are never touched.',
+  uninitializedAction: 'Initialize memory bank',
+  uninitializedDone: 'Memory bank initialized. Automatic capture and recall are now on.',
+
   // ---- 记忆面板：tab ----
   'tab.pending': 'Pending',
   'tab.memories': 'Memories',
@@ -333,6 +345,19 @@ const zh = {
   rootFallback: '读的不是这个仓库',
   rootFallbackHint:
     '面板没拿到会话工作目录，读的是进程 cwd —— 那个目录里不会有你的记忆，所以永远是 0。在会话里跑一次工具，或设 DSH_MEMORY_ROOT。',
+
+  // ---- 未初始化 ----
+  //
+  // 「0 条」和「没装过」是两件不同的事：前者是结论，后者是**还没开始**。
+  // 混在一起用户会以为记忆坏了。未初始化状态下这一栏只有一个动作。
+  uninitializedTitle: '这个仓库还没初始化记忆库。',
+  uninitializedDesc:
+    '自动捕获与召回注入在 `.dsh-memory/` 存在之前不会执行 —— 它没有在你背后写过任何东西。',
+  uninitializedWhat:
+    '初始化会建出 `.dsh-memory/`（memories / trust / pending / inbox / index 五个目录），以及空的 `config.json`、空回执表和 `.gitignore`。',
+  uninitializedIdempotent: '幂等：已有文件一个字节都不动。',
+  uninitializedAction: '初始化记忆库',
+  uninitializedDone: '记忆库已初始化。自动捕获与召回注入从现在起生效。',
 
   // ---- 记忆面板：tab ----
   'tab.pending': '待决',

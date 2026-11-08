@@ -116,6 +116,7 @@ const ARG_NAMES = Object.freeze({
   ledger: ['limit'],
   config: [],
   projectConfig: [],
+  init: [],
   accept: ['id'],
   reject: ['id', 'reason'],
   edit: ['id', 'patch'],

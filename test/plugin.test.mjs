@@ -143,13 +143,14 @@ describe(
       : false,
   },
   () => {
-  it('注册 7 个工具，名字与 output 契约正确', () => {
+  it('注册 8 个工具，名字与 output 契约正确', () => {
     apply(ctx, {})
 
     const names = ctx._tools.map((tool) => tool.name).sort()
     assert.deepEqual(names, [
       'memory_audit',
       'memory_forget',
+      'memory_init',
       'memory_pending',
       'memory_promote',
       'memory_recall',
@@ -185,6 +186,10 @@ describe(
 
   it('memory_audit --routes 真的跑路由检查（不是只有 schema 没有实现）', async () => {
     apply(ctx, {})
+    // 0.4.4 起只读工具**不替用户 opt-in**：没初始化就直接回「未初始化」。
+    // 这条用例测的是 `--routes` 接没接进 run，所以先把骨架建起来。
+    const { ensureLayout } = await import('../lib/store.js')
+    ensureLayout(root)
     const audit = ctx._tools.find((tool) => tool.name === 'memory_audit')
     // 临时仓库里没有任何文档目录 —— 报告要说「0 个目录」，而不是崩。
     const result = await audit.execute(

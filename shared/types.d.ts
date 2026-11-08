@@ -68,6 +68,20 @@ export interface ConfigSnapshot {
 /** 健康概览 —— 界面 2 的顶部一行。 */
 export interface Overview {
   readonly root: string
+  /**
+   * 这个仓库**装过**记忆库吗（`.dsh-memory/` 存在）。
+   *
+   * 面板必须把它画出来：`false` 时该显示**初始化入口**，而不是「0 条记忆」——
+   * 「没装过」和「装了但空」长得一模一样，前者需要的是一个动作。
+   */
+  readonly initialized: boolean
+  /**
+   * `root` 是怎么来的：`config` / `env` / `session` / `header` / `memo` / `fallback`。
+   *
+   * `fallback` 意味着「没有 live Agent，读的是进程 cwd」—— 那个目录里当然
+   * 一条记忆都没有。界面必须把来源画出来，否则 0 会被读成「这个仓库没有记忆」。
+   */
+  readonly rootSource?: string | null
   readonly active: number
   readonly pending: number
   readonly inbox: number

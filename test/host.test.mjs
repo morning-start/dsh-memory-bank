@@ -848,11 +848,43 @@ describe('面板服务 · 按 sessionId 解析仓库根', { skip: hostService ? 
 /* ── 7 · 命令面回归（防止重构时丢掉旧行为） ────────────────────── */
 
 describe('command · 薄壳之后行为不变', () => {
+  it('未初始化：只读子命令报「未初始化」而不是「没有」', async () => {
+    // 「0 条」和「没装过」是两件不同的事 —— 前者是结论，后者是**还没开始**。
+    // 混在一起用户会以为记忆坏了。命令面必须给出可操作的那一句。
+    const command = createMemoryCommand({ resolveRoot: () => root, configSource, log: () => {}, mutations })
+    for (const rawInput of ['status', 'pending', 'audit', 'promote', 'recall 查询']) {
+      const result = await command.handler({ rawInput, agent: null })
+      assert.match(result.text, /还没初始化记忆库/, `/memory ${rawInput} 没报「未初始化」`)
+      assert.match(result.text, /\/memory init/, `/memory ${rawInput} 没给初始化入口`)
+    }
+    // 也**不能**顺手把目录建出来 —— 只读就是只读。
+    assert.equal(existsSync(layout(root).base), false, '只读子命令不该创建 .dsh-memory/')
+  })
+
+  it('/memory init 建骨架，之后只读子命令恢复正常', async () => {
+    const command = createMemoryCommand({ resolveRoot: () => root, configSource, log: () => {}, mutations })
+
+    const created = await command.handler({ rawInput: 'init', agent: null })
+    assert.equal(created.kind, 'success')
+    assert.match(created.text, /已初始化记忆库/)
+    assert.equal(existsSync(layout(root).base), true)
+
+    // 幂等：第二次不报「创建了」。
+    const again = await command.handler({ rawInput: 'init', agent: null })
+    assert.match(again.text, /已存在且完整/)
+
+    // `--dry-run` 不落盘（这里已经建好了，所以它报「已存在」）。
+    const dry = await command.handler({ rawInput: 'init --dry-run', agent: null })
+    assert.match(dry.text, /已存在且完整/)
+
+    assert.equal((await command.handler({ rawInput: 'status', agent: null })).kind, 'success')
+    assert.equal((await command.handler({ rawInput: 'pending', agent: null })).text, '没有待决提案。')
+  })
+
   it('status / 未知子命令 / 空库都不崩', async () => {
     const command = createMemoryCommand({ resolveRoot: () => root, configSource, log: () => {}, mutations })
     assert.equal((await command.handler({ rawInput: 'status', agent: null })).kind, 'success')
     assert.equal((await command.handler({ rawInput: 'nope', agent: null })).kind, 'error')
-    assert.equal((await command.handler({ rawInput: 'pending', agent: null })).text, '没有待决提案。')
     assert.match((await command.handler({ rawInput: 'accept', agent: null })).text, /用法/)
   })
 

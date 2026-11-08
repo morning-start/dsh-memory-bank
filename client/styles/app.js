@@ -890,6 +890,20 @@ const CSS = `
   flex: none;
 }
 
+/*
+ * 未初始化：这一栏只有一个动作，所以给它呼吸空间。
+ *
+ * 不要把它做成「空列表 + 一块灰」—— 那是「没有数据」的形态，而这里是
+ * **还没开始**。标题说清楚，动作只有一个，其余全是解释。
+ */
+.mb-uninitialized {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px 0;
+}
+
 .mb-panel__head {
   display: flex;
   align-items: flex-start;

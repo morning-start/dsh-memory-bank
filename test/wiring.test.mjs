@@ -140,12 +140,13 @@ afterEach(() => {
 })
 
 describe('插件接线（不依赖 peer）', () => {
-  it('注册 7 个工具，名字与 output 契约正确', () => {
+  it('注册 8 个工具，名字与 output 契约正确', () => {
     wire()
 
     assert.deepEqual(ctx._tools.map((tool) => tool.name).sort(), [
       'memory_audit',
       'memory_forget',
+      'memory_init',
       'memory_pending',
       'memory_promote',
       'memory_recall',
@@ -202,7 +203,7 @@ describe('插件接线（不依赖 peer）', () => {
   })
 
   /**
-   * 七个工具都必须把 `exec.agent` 传到 `resolveRoot`。
+   * 八个工具都必须把 `exec.agent` 传到 `resolveRoot`。
    *
    * 上一版全部写 `resolveRoot()` —— 不带参数。于是 `createResolver` 里
    * 「会话工作目录」那一段是死代码：用户在 DSH 里对仓库 A 说「记住 X」，
@@ -212,7 +213,7 @@ describe('插件接线（不依赖 peer）', () => {
    * 每个工具喂「刚好能走到 resolveRoot」的最小参数 —— 之后的失败都是预期内的
    * （空库没有提案 / 没有那条记忆），我们只关心 resolveRoot 收到的是不是 agent。
    */
-  it('**七个工具都把 exec.agent 传给 resolveRoot**', async () => {
+  it('**八个工具都把 exec.agent 传给 resolveRoot**', async () => {
     const seen = []
     const resolveRoot = (agent) => {
       seen.push(agent?.id ?? null)
@@ -222,6 +223,7 @@ describe('插件接线（不依赖 peer）', () => {
     const tools = createToolDefinitions({ resolveRoot, configSource: fixedConfigSource(defaultConfig()), log: () => {} })
 
     const argsFor = {
+      memory_init: {},
       memory_remember: { title: 't', kind: 'fact', about: 'a', body: 'b' },
       memory_recall: { query: 'q' },
       memory_pending: {},

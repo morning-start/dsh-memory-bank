@@ -90,6 +90,13 @@ export const QUERIES = Object.freeze({
  * 而那个实现同时被 `/memory` 命令面调用 —— 两条路径不许各写一份。
  */
 export const MUTATIONS = Object.freeze({
+  /**
+   * 初始化记忆库（建 `.dsh-memory/` 骨架）。**幂等**。
+   *
+   * 面板在「未初始化」状态下拿它当唯一动作 —— 一个 GUI 不该只能告诉你
+   * 「去终端跑命令」。它和 `accept` / `reject` 一样进同一个写锁。
+   */
+  init: Object.freeze({ method: 'init', args: panelArgs() }),
   /** 接受一条待决提案。 */
   accept: Object.freeze({ method: 'accept', args: panelArgs('id') }),
   /** 拒绝一条待决提案（进 `pending/rejected/` 留档）。 */

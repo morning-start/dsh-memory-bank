@@ -147,6 +147,18 @@ const en = {
   rootFallbackHint:
     'The panel has no session working directory, so it reads the process cwd — that is not your repository and will always be empty. Run one tool call in the session, or set DSH_MEMORY_ROOT.',
 
+  // ---- 未初始化 ----
+  //
+  // 「0 条」和「没装过」是两件不同的事：前者是结论，后者是**还没开始**。
+  // 混在一起用户会以为记忆坏了。未初始化状态下这一栏只有一个动作。
+  uninitializedTitle: 'This repository has no memory bank yet.',
+  uninitializedDesc:
+    'Automatic capture and recall injection stay off until `.dsh-memory/` exists — nothing has been written behind your back.',
+  uninitializedWhat: 'Initializing creates `.dsh-memory/` (memories / trust / pending / inbox / index) plus an empty `config.json`, receipt store and `.gitignore`.',
+  uninitializedIdempotent: 'Idempotent: existing files are never touched.',
+  uninitializedAction: 'Initialize memory bank',
+  uninitializedDone: 'Memory bank initialized. Automatic capture and recall are now on.',
+
   // ---- 记忆面板：tab ----
   'tab.pending': 'Pending',
   'tab.memories': 'Memories',
@@ -343,6 +355,19 @@ const zh = {
   rootFallback: '读的不是这个仓库',
   rootFallbackHint:
     '面板没拿到会话工作目录，读的是进程 cwd —— 那个目录里不会有你的记忆，所以永远是 0。在会话里跑一次工具，或设 DSH_MEMORY_ROOT。',
+
+  // ---- 未初始化 ----
+  //
+  // 「0 条」和「没装过」是两件不同的事：前者是结论，后者是**还没开始**。
+  // 混在一起用户会以为记忆坏了。未初始化状态下这一栏只有一个动作。
+  uninitializedTitle: '这个仓库还没初始化记忆库。',
+  uninitializedDesc:
+    '自动捕获与召回注入在 `.dsh-memory/` 存在之前不会执行 —— 它没有在你背后写过任何东西。',
+  uninitializedWhat:
+    '初始化会建出 `.dsh-memory/`（memories / trust / pending / inbox / index 五个目录），以及空的 `config.json`、空回执表和 `.gitignore`。',
+  uninitializedIdempotent: '幂等：已有文件一个字节都不动。',
+  uninitializedAction: '初始化记忆库',
+  uninitializedDone: '记忆库已初始化。自动捕获与召回注入从现在起生效。',
 
   // ---- 记忆面板：tab ----
   'tab.pending': '待决',
@@ -1325,6 +1350,20 @@ const CSS = `
  */
 .mb-panel--view > * {
   flex: none;
+}
+
+/*
+ * 未初始化：这一栏只有一个动作，所以给它呼吸空间。
+ *
+ * 不要把它做成「空列表 + 一块灰」—— 那是「没有数据」的形态，而这里是
+ * **还没开始**。标题说清楚，动作只有一个，其余全是解释。
+ */
+.mb-uninitialized {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px 0;
 }
 
 .mb-panel__head {
@@ -3429,6 +3468,16 @@ function createMemoryController(ctx, t, sessionRef = { current: null }) {
       sessionRef.current = typeof sessionId === 'string' && sessionId !== '' ? sessionId : null
     },
 
+    /**
+     * 初始化记忆库。**幂等**（后端 `ensureLayout` 只补缺失项）。
+     *
+     * 走 `memoryBank/init` → `lib/adjudicate.js` 的 `init`，和工具面
+     * （`memory_init`）/ 命令面（`/memory init`）**同一个实现**、同一个写锁。
+     */
+    init() {
+      return mutate('init', () => ctx.remote.memoryBank.init())
+    },
+
     /** 读一轮快照。六个查询并发，任意一个失败就整页报错（不显示半截数字）。 */
     async load() {
       const mine = (generation += 1)
@@ -3599,6 +3648,15 @@ function MemoryView(props) {
   const memory = props.memory
   const state = React.useSyncExternalStore(memory.subscribe, memory.getSnapshot)
 
+  const ready = state.status === 'ready'
+  /**
+   * 这个仓库**装过**记忆库吗？
+   *
+   * `false` 时这一栏只显示一个动作（初始化）—— 「0 条」和「没装过」长得
+   * 一模一样，而前者是结论、后者是还没开始。
+   */
+  const uninitialized = ready && state.overview?.initialized === false
+
   /**
    * **切到这一栏（挂载）时：先报会话，再重新读一次。**
    *
@@ -3690,12 +3748,54 @@ function MemoryView(props) {
               t('retry'),
             ),
           )
-        : h(HealthBlock, { t, state }),
-    state.status === 'ready' ? h(TabBar, { t, memory, state }) : null,
-    state.status === 'ready' ? h(TabBody, { t, memory, state }) : null,
+        : uninitialized
+          ? h(UninitializedState, { t, memory, state })
+          : h(HealthBlock, { t, state }),
+    ready && !uninitialized ? h(TabBar, { t, memory, state }) : null,
+    ready && !uninitialized ? h(TabBody, { t, memory, state }) : null,
     state.drawer
       ? h(ProjectConfigDrawer, { t, config: props.config, onClose: () => memory.closeDrawer() })
       : null,
+  )
+}
+
+/**
+ * 未初始化 —— 这一栏的**唯一动作**是初始化。
+ *
+ * ## 为什么它不能只是「0 条」
+ *
+ * 「0 条」和「没装过」长得一模一样，而前者是结论、后者是**还没开始**。
+ * 混在一起用户会以为记忆坏了（0.3.7 修过「0 到底是没记忆还是读错了地方」，
+ * 这是同一个坑的第二面）。
+ *
+ * ## 为什么这个按钮存在
+ *
+ * 一个 GUI 不该只能告诉你「去终端跑 `/memory init`」。走
+ * `memoryBank/init` → `lib/adjudicate.js` 的 `init`，和工具面 / 命令面
+ * **同一个实现**（进同一个写锁）。
+ *
+ * @param {{ t: Function, memory: any, state: any }} props
+ */
+function UninitializedState({ t, memory, state }) {
+  const busy = state.busy === 'init'
+  return h(
+    'div',
+    { className: 'mb-uninitialized' },
+    h(EmptyState, { title: t('uninitializedTitle'), desc: t('uninitializedDesc') }),
+    h('p', { className: 'mb-caption' }, t('uninitializedWhat')),
+    h('p', { className: 'mb-caption' }, t('uninitializedIdempotent')),
+    h(
+      'button',
+      {
+        type: 'button',
+        className: 'mb-btn mb-btn--primary',
+        disabled: busy,
+        onClick: () => {
+          void memory.init()
+        },
+      },
+      busy ? t('loading') : t('uninitializedAction'),
+    ),
   )
 }
 
@@ -4316,6 +4416,7 @@ const ARG_NAMES = Object.freeze({
   ledger: ['limit'],
   config: [],
   projectConfig: [],
+  init: [],
   accept: ['id'],
   reject: ['id', 'reason'],
   edit: ['id', 'patch'],
